@@ -26,6 +26,7 @@ pub struct AsmParser;
     bin_name = "aluasm",
     author,
     version,
+    about,
     setting = AppSettings::ColoredHelp
 )]
 pub struct Args {

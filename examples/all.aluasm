@@ -4,9 +4,8 @@
                     .BPDIGEST
 
 .LIBS ; Library reference segment
-                    somelib alu1wnhusevxmdphv3dh8ada44k0xw66ahq9nzhkv39z07hmudhp380sq0dtml
 
-.MAIN
+.MAIN ; Code segment
                     clr     r1024[5]
                     put     5,a16[8]
                     putif   0xAF67937B5498DC,r256[1]

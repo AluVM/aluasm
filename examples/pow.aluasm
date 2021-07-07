@@ -13,8 +13,8 @@
                     read a16[2], $cycle_limit
                     mov  a16[1], 0				; putting a value into register
 loop:											; label for cycle
-					sha2 s8[1], r256[2]			; taking hash of the data
-                    extr r256[2], s8[1]			; saving hash result
+					sha2 s16[1], r256[2]		; taking hash of the data
+                    extr r256[2], s16[1]		; saving hash result
                     inc  a16[1]					; counting steps
                     ge   a16[1], a16[2]			; making sure we do not exceed $cycle_limit
                     jif  exceeded
