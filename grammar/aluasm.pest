@@ -38,7 +38,7 @@ goto_ref = _{ "@" ~ lib_name }
 goto = @{ goto_offset ~ goto_ref? }
 
 flag = { ASCII_ALPHA }
-op = @{ ident ~ (":" ~ flag+)? }
+op = @{ ident ~ ("." ~ flag+)? }
 operand = { lit | reg | goto | var_name }
 label = @{ ident ~ ":" }
 instruction = { label? ~ NEWLINE* ~ op ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
