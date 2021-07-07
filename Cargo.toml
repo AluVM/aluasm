@@ -1,0 +1,20 @@
+[package]
+name = "aluasm"
+description = "Alu assembler"
+version = "0.1.0"
+authors = ["Dr Maxim Orlovsky <orlovsky@pandoracore.com>"]
+license = "AGPL"
+edition = "2018"
+repository = "https://github.com/pandoracore/alure"
+homepage = "https://aluvm.org"
+keywords = ["virtual-machine", "emulator", "functional", "risc", "edge-computing"]
+categories = ["no-std", "embedded", "compilers", "cryptography", "emulators"]
+readme = "README.md"
+exclude = [".github"]
+
+[dependencies]
+amplify = "3.7"
+aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm" }
+# alure = { version = "0.1", path = "../alure" }
+logos = "0.12"
+peg = "0.7"
