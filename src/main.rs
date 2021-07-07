@@ -13,6 +13,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use clap::{AppSettings, Clap};
+use pest::iterators::Pair;
 use pest::Parser;
 
 #[derive(Parser)]
@@ -44,9 +45,15 @@ fn main() {
             AsmParser::parse(Rule::program, &s).expect("compilation error: ");
 
         for pair in pairs {
-            println!("Rule:    {:?}", pair.as_rule());
-            println!("Span:    {:?}", pair.as_span());
-            println!("Text:    {}", pair.as_str());
+            print_pair(pair);
         }
+    }
+}
+
+fn print_pair(pair: Pair<Rule>) {
+    println!("Rule:    {:?}", pair.as_rule());
+    println!("Span:    {:?}", pair.as_span());
+    for pair in pair.into_inner() {
+        print_pair(pair);
     }
 }
