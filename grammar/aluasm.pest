@@ -1,4 +1,4 @@
-ident = _{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")+ }
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")+ }
 bech32 = _{ ASCII_ALPHANUMERIC+ }
 
 COMMENT = _{ ";" ~ (!NEWLINE ~ ANY)* }
@@ -8,10 +8,11 @@ isae_name = { ".ALU" | ".DYNDATA" | ".BPDIGEST" }
 isae = { ".ISAE" ~ (isae_name | NEWLINE)+ }
 
 reg_family = { "a" | "f" | "r" | "s" }
-reg_member = { ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+reg_member = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
 reg_name = @{ reg_family ~ reg_member }
-reg_index = !{ "[" ~ ASCII_DIGIT+ ~ "]" }
-reg = @{ reg_name ~ reg_index }
+reg_index = @{ ASCII_DIGIT+ }
+reg_sub = _{ "[" ~ reg_index ~ "]" }
+reg = @{ reg_name ~ reg_sub }
 
 lit_float = @{ (ASCII_DIGIT* ~ "." ~ ASCII_DIGIT+) | (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT*) }
 lit_dec = @{ ASCII_DIGIT+ }
@@ -21,7 +22,7 @@ lit_bin = @{ ("0b" | "0B") ~ ("1" | "0")+ }
 lit_str = @{ "\"" ~ (!(NEWLINE | "\"") ~ ANY)* ~ "\"" }
 lit_chr = @{ "\'" ~ ANY ~ "\'" }
 lit_num = { lit_dec | lit_hex | lit_oct | lit_bin }
-lit = { lit_dec | lit_hex | lit_oct | lit_bin | lit_float | lit_str | lit_chr }
+lit = { lit_float | lit_hex | lit_oct | lit_bin | lit_dec | lit_str | lit_chr }
 
 lib_ident = { ident }
 lib_bech = @{ ^"alu1" ~ bech32 }
@@ -29,17 +30,14 @@ lib_name = { lib_bech | lib_ident }
 lib_def = { lib_ident ~ lib_bech ~ NEWLINE+ }
 libs = {  ".LIBS" ~ NEWLINE* ~ lib_def* }
 
-offset_rel = { "+" | "-" | "=" }
-offset = { offset_rel ~ lit_num }
-
-goto_name = @{ ident }
-goto_offset = _{ offset | goto_name }
-goto_ref = _{ "@" ~ lib_name }
-goto = @{ goto_offset ~ goto_ref? }
+goto_rel = { "+" | "-" | "=" }
+goto_offset = @{ goto_rel ~ lit_num }
+goto = { ident | goto_offset }
+call = { lib_name? ~ "->" ~ ident }
 
 flag = { ASCII_ALPHA }
 op = @{ ident ~ ("." ~ flag+)? }
-operand = { lit | reg | goto | var_name }
+operand = { reg | call | lit | var_name | goto }
 label = @{ ident ~ ":" }
 instruction = { label? ~ NEWLINE* ~ op ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
 
@@ -50,11 +48,11 @@ routine = { (routine_decl | routine_main) ~ instruction* }
 code = { routine+ }
 
 var_name = @{ "$" ~ ident }
-const_decl = { var_name ~ lit ~ NEWLINE+ }
-data = { ".DATA"  ~ NEWLINE* ~ const_decl* }
+const_decl = { var_name ~ "=" ~ lit ~ NEWLINE+ }
+data = { ".CONST" ~ NEWLINE* ~ const_decl* }
 
 dyn_decl = { var_name ~ lit_str ~ NEWLINE+ }
-dyn = { ".DYN"  ~ NEWLINE* ~ dyn_decl* }
+dyn = { ".DYN" ~ NEWLINE* ~ dyn_decl* }
 
 segment = { isae | code | libs | data | dyn }
 program = _{ SOI ~ segment+ ~ EOI }

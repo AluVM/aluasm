@@ -4,6 +4,7 @@
                     .BPDIGEST
 
 .LIBS ; Library reference segment
+                    somelib alu1wnhusevxmdphv3dh8ada44k0xw66ahq9nzhkv39z07hmudhp380sq0dtml
 
 .MAIN ; Code segment
                     clr     r1024[5]
@@ -27,8 +28,8 @@ loop:               swp     a8[1],a8[2]
                     lt.r    f64[5],f64[9]
                     gt      r160[5],r160[9]
                     lt      r160[5],r160[9]
-                    eq      a8[5],a8[9]         .none=true
-                    eq      r160[5],r160[9]     .none=false
+                    eq.t    a8[5],a8[9]
+                    eq.f    r160[5],r160[9]
                     eq.e    f64[19],f64[29]
                     ifn     a32[32]
                     ifz     r2048[17]
@@ -74,9 +75,9 @@ loop:               swp     a8[1],a8[2]
                     ifz     a16[8]
                     jif     done
                     jmp     loop
-                    call    56@somelib
+                    call    somelib->method
 done:               ret
 
-.DATA ; Data segment
-                    $f1     2.13
-                    $f2     5.17
+.CONST ; Constant data segment
+                    $f1 =   2.13
+                    $f2 =   5.17

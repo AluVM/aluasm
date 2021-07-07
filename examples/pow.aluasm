@@ -24,7 +24,7 @@ loop:											; label for cycle
 done:				succ
 exceeded:			fail						; failing since we exceeded $cycle_limit
 
-.DATA ; Data segment
+.CONST ; Constant data segment
 
 .DYN
                     $input "Source data for hash generation"
