@@ -7,6 +7,10 @@
 
 #[macro_use]
 extern crate pest_derive;
+#[macro_use]
+extern crate amplify;
+
+mod sym;
 
 use std::fs::File;
 use std::io::Read;
