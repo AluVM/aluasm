@@ -4,8 +4,14 @@ bech32 = _{ ASCII_ALPHANUMERIC+ }
 COMMENT = _{ ";" ~ (!NEWLINE ~ ANY)* }
 WHITESPACE = _{ " " | "\t" }
 
-isae_name = { ".ALU" | ".DYNDATA" | ".BPDIGEST" }
-isae = { ".ISAE" ~ (isae_name | NEWLINE)+ }
+isae_alu = { "ALU" }
+isae_dyn = { "ALURE" }
+isae_bpdigest = { "BPDIGEST" }
+isae_bitcoin = { "BP" }
+isae_rgb = { "RGB" }
+isae_unknown = @{ ASCII_ALPHA_UPPER+ }
+isae_name = { isae_alu | isae_dyn | isae_bpdigest | isae_bitcoin | isae_rgb }
+isae = { ".ISAE" ~ (isae_name | isae_unknown | NEWLINE)+ }
 
 reg_family = { "a" | "f" | "r" | "s" }
 reg_member = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
@@ -54,5 +60,5 @@ data = { ".CONST" ~ NEWLINE* ~ const_decl* }
 dyn_decl = { var_name ~ lit_str ~ NEWLINE+ }
 dyn = { ".DYN" ~ NEWLINE* ~ dyn_decl* }
 
-segment = { isae | code | libs | data | dyn }
-program = _{ SOI ~ segment+ ~ EOI }
+segment = _{ isae | code | libs | data | dyn }
+program = { SOI ~ segment+ ~ EOI }

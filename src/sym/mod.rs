@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
+use aluvm::isa::Isa;
 use aluvm::libs::LibId;
 use aluvm::reg::{Reg32, RegAll};
 use amplify::num::u1024;
@@ -19,6 +20,7 @@ use self::mnemonic::Mnemonic;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default, Debug)]
 pub struct Program {
+    pub isae: BTreeSet<Isa>,
     pub libs: BTreeMap<String, LibId>,
     pub main: Option<Routine>,
     pub code: BTreeMap<String, Routine>,

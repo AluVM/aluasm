@@ -1,7 +1,7 @@
 .ISAE ; ISA Extensions segment
-                    .ALU
-                    .DYNDATA
-                    .BPDIGEST
+                    ALU
+                    ALURE
+                    BPDIGEST
 
 .LIBS ; Library reference segment
 
