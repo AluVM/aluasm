@@ -4,14 +4,8 @@ bech32 = _{ ASCII_ALPHANUMERIC+ }
 COMMENT = _{ ";" ~ (!NEWLINE ~ ANY)* }
 WHITESPACE = _{ " " | "\t" }
 
-isae_alu = { "ALU" }
-isae_dyn = { "ALURE" }
-isae_bpdigest = { "BPDIGEST" }
-isae_bitcoin = { "BP" }
-isae_rgb = { "RGB" }
-isae_unknown = @{ ASCII_ALPHA_UPPER+ }
-isae_name = { isae_alu | isae_dyn | isae_bpdigest | isae_bitcoin | isae_rgb }
-isae = { ".ISAE" ~ (isae_name | isae_unknown | NEWLINE)+ }
+isae_name = { ASCII_ALPHA_UPPER+ }
+isae = { ".ISAE" ~ (isae_name | NEWLINE)+ }
 
 reg_family = { "a" | "f" | "r" | "s" }
 reg_member = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
@@ -37,28 +31,33 @@ lib_def = { lib_ident ~ lib_bech ~ NEWLINE+ }
 libs = {  ".LIBS" ~ NEWLINE* ~ lib_def* }
 
 goto_rel = { "+" | "-" | "=" }
-goto_offset = @{ goto_rel ~ lit_num }
-goto = { ident | goto_offset }
-call = { lib_name? ~ "->" ~ ident }
+goto_offset = { goto_rel ~ lit_num }
+goto_name = { ident }
+goto = { goto_name | goto_offset }
+call_name = { ident }
+call = { lib_name? ~ "->" ~ call_name }
 
 flag = { ASCII_ALPHA }
-op = @{ ident ~ ("." ~ flag+)? }
-operand = { reg | call | lit | var_name | goto }
-label = @{ ident ~ ":" }
-instruction = { label? ~ NEWLINE* ~ op ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
+flags = ${"." ~ flag+}
+op = { ident }
+operand = { reg | call | lit | var | goto }
+label = { ident }
+instruction = { (label ~ ":")? ~ NEWLINE* ~ op ~ flags? ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
 
 routine_name = { ident }
 routine_main = { ".MAIN" ~ NEWLINE* }
 routine_decl = { ".ROUTINE" ~ routine_name ~ NEWLINE* }
 routine = { (routine_decl | routine_main) ~ instruction* }
-code = { routine+ }
 
-var_name = @{ "$" ~ ident }
+var_name = { ident }
+var = ${ "$" ~ var_name }
+
 const_decl = { var_name ~ "=" ~ lit ~ NEWLINE+ }
 data = { ".CONST" ~ NEWLINE* ~ const_decl* }
 
-dyn_decl = { var_name ~ lit_str ~ NEWLINE+ }
-dyn = { ".DYN" ~ NEWLINE* ~ dyn_decl* }
+input_name = { lit_str }
+input_decl = { var ~ input_name ~ NEWLINE+ }
+input = { ".INPUT" ~ NEWLINE* ~ input_decl+ }
 
-segment = _{ isae | code | libs | data | dyn }
+segment = _{ isae | routine | libs | data | input }
 program = { SOI ~ segment+ ~ EOI }

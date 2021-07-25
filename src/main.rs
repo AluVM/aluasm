@@ -10,18 +10,22 @@ extern crate pest_derive;
 #[macro_use]
 extern crate amplify;
 
-mod sym;
+mod analyzer;
+pub mod ast;
+mod mnemonic;
 
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
 use clap::{AppSettings, Clap};
-use pest::iterators::Pair;
+pub use mnemonic::Mnemonic;
 use pest::Parser;
 
+use crate::analyzer::Program;
+
 #[derive(Parser)]
-#[grammar = "../grammar/aluasm.pest"]
+#[grammar = "grammar.pest"]
 pub struct AsmParser;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Clap)]
@@ -48,17 +52,10 @@ fn main() {
         fd.read_to_string(&mut s).expect("reading file");
         let pairs =
             AsmParser::parse(Rule::program, &s).expect("compilation error: ");
+        let program = Program::analyze(
+            pairs.into_iter().next().expect("program not found"),
+        );
 
-        for pair in pairs {
-            print_pair(pair);
-        }
-    }
-}
-
-fn print_pair(pair: Pair<Rule>) {
-    println!("Rule:    {:?}", pair.as_rule());
-    println!("Span:    {:?}", pair.as_span());
-    for pair in pair.into_inner() {
-        print_pair(pair);
+        println!("{:#?}", program);
     }
 }

@@ -5,7 +5,7 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
-mod mnemonic;
+//! Abstract syntax tree data types
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
@@ -16,17 +16,7 @@ use aluvm::libs::LibId;
 use aluvm::reg::{Reg32, RegAll};
 use amplify::num::u1024;
 
-use self::mnemonic::Mnemonic;
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default, Debug)]
-pub struct Program {
-    pub isae: BTreeSet<Isa>,
-    pub libs: BTreeMap<String, LibId>,
-    pub main: Option<Routine>,
-    pub code: BTreeMap<String, Routine>,
-    pub r#const: BTreeMap<String, Const>,
-    pub vars: BTreeMap<String, Var>,
-}
+use crate::Mnemonic;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct Const {
@@ -50,10 +40,11 @@ pub struct Routine {
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct Operator {
+    pub label: Option<String>,
     pub mnemonic: Mnemonic,
-    pub operands: Vec<Operand>,
     pub postfix_flags: FlagSet<char>,
     pub keyed_flags: FlagSet<KeyedFlag>,
+    pub operands: Vec<Operand>,
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]

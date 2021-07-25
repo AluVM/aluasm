@@ -26,7 +26,7 @@ exceeded:			fail						; failing since we exceeded $cycle_limit
 
 .CONST ; Constant data segment
 
-.DYN
-                    $input "Source data for hash generation"
-                    $difficulty "Target PoW difficulty level"
-                    $cycle_limit "Maximum number of cycles"
+.INPUT
+                    $input          "Source data for hash generation"
+                    $difficulty     "Target PoW difficulty level"
+                    $cycle_limit    "Maximum number of cycles"
