@@ -7,21 +7,36 @@ WHITESPACE = _{ " " | "\t" }
 isae_name = { ASCII_ALPHA_UPPER+ }
 isae = { ".ISAE" ~ (isae_name | NEWLINE)+ }
 
-reg_family = { "a" | "f" | "r" | "s" }
-reg_member = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
-reg_name = @{ reg_family ~ reg_member }
-reg_index = @{ ASCII_DIGIT+ }
-reg_sub = _{ "[" ~ reg_index ~ "]" }
-reg = @{ reg_name ~ reg_sub }
+reg_a = @{ ^"a" }
+reg_f = @{ ^"f" }
+reg_f16b = @{ ^"f16b" }
+reg_r = @{ ^"r" }
+reg_s = @{ ^"s" }
+reg_member = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT{, 3} }
+reg_index = @{ ASCII_DIGIT{, 2} }
+reg = ${ (((reg_a | reg_f | reg_r | reg_s) ~ reg_member) | reg_f16b) ~ "[" ~ reg_index ~ "]" }
 
-lit_float = @{ (ASCII_DIGIT* ~ "." ~ ASCII_DIGIT+) | (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT*) }
+
+char_unicode = @{ "\\u{" ~ ASCII_HEX_DIGIT{1, 6} ~ "}"  }
+char_hex = @{ "\\x" ~ ('0'..'7')? ~ ASCII_HEX_DIGIT }
+char_lf = @{ "\\n" }
+char_cr = @{ "\\r" }
+char_ht = @{ "\\t" }
+char_null = @{ "\\0" }
+char_bs = @{ "\\\\" }
+char_special = _{ char_lf | char_cr | char_ht | char_bs | char_null | char_unicode | char_hex }
+
+lit_significand_int = @{ ASCII_DIGIT+ }
+lit_significand_res = @{ ASCII_DIGIT+ }
+lit_exponential = @{ ASCII_DIGIT+ }
+lit_float = ${ lit_significand_int ~ "." ~ lit_significand_res ~ (^"e" ~ lit_exponential)? }
 lit_dec = @{ ASCII_DIGIT+ }
-lit_hex = @{ ("0x" | "0X") ~ ASCII_HEX_DIGIT+ }
-lit_oct = @{ ("0o" | "0O") ~ ASCII_OCT_DIGIT+ }
-lit_bin = @{ ("0b" | "0B") ~ ("1" | "0")+ }
+lit_hex = @{ ^"0x" ~ ASCII_HEX_DIGIT+ }
+lit_oct = @{ ^"0o" ~ ASCII_OCT_DIGIT+ }
+lit_bin = @{ ^"0b" ~ ("1" | "0")+ }
 lit_str = @{ "\"" ~ (!(NEWLINE | "\"") ~ ANY)* ~ "\"" }
-lit_chr = @{ "\'" ~ ANY ~ "\'" }
-lit_num = { lit_dec | lit_hex | lit_oct | lit_bin }
+lit_chr = @{ "\'" ~ (ANY | char_special) ~ "\'" }
+lit_num = _{ lit_dec | lit_hex | lit_oct | lit_bin }
 lit = { lit_float | lit_hex | lit_oct | lit_bin | lit_dec | lit_str | lit_chr }
 
 lib_ident = { ident }
@@ -30,19 +45,21 @@ lib_name = { lib_bech | lib_ident }
 lib_def = { lib_ident ~ lib_bech ~ NEWLINE+ }
 libs = {  ".LIBS" ~ NEWLINE* ~ lib_def* }
 
-goto_rel = { "+" | "-" | "=" }
-goto_offset = { goto_rel ~ lit_num }
+goto_fwd = @{ "+" }
+goto_rev = @{ "-" }
+goto_exact = @{ "=" }
+goto_offset = _{ (goto_fwd | goto_rev | goto_exact) ~ lit_num }
 goto_name = { ident }
 goto = { goto_name | goto_offset }
+
 call_name = { ident }
 call = { lib_name? ~ "->" ~ call_name }
 
-flag = { ASCII_ALPHA }
-flags = ${"." ~ flag+}
-op = { ident }
-operand = { reg | call | lit | var | goto }
 label = { ident }
-instruction = { (label ~ ":")? ~ NEWLINE* ~ op ~ flags? ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
+op = { ident }
+operand = _{ reg | call | lit | var | goto }
+flag = { ASCII_ALPHA }
+instruction = { (label ~ ":")? ~ NEWLINE* ~ op ~ ("." ~ flag+)? ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
 
 routine_name = { ident }
 routine_main = { ".MAIN" ~ NEWLINE* }

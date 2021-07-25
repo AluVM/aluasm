@@ -12,14 +12,12 @@ extern crate amplify;
 
 mod analyzer;
 pub mod ast;
-mod mnemonic;
 
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
 use clap::{AppSettings, Clap};
-pub use mnemonic::Mnemonic;
 use pest::Parser;
 
 use crate::analyzer::Program;
