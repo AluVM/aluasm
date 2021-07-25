@@ -9,12 +9,15 @@
 //! abstract syntax tree (AST)
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::TryFrom;
+use std::fmt::{self, Display, Formatter, Write};
 use std::str::FromStr;
 
 use aluvm::libs::LibId;
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
 use amplify::hex::FromHex;
+use amplify::num::error::OverflowError;
 use amplify::num::{u1024, u5};
 use pest::iterators::Pair;
 use pest::Span;
@@ -50,6 +53,25 @@ pub enum Error {
 
     /// unknown ISA extension ID `{0}`
     UnknownIsa(String),
+
+    /// register index `{0}` is out of range 1..=32
+    RegisterIndexOutOfRange(u8),
+}
+
+impl Error {
+    pub fn errno(&self) -> u16 {
+        match self {
+            Error::RepeatedRoutineName(_) => 1,
+            Error::UnknownMnemonic(_) => 2,
+            Error::RepeatedLabel { .. } => 3,
+            Error::WrongRegister { .. } => 4,
+            Error::TooManyFlags(_) => 5,
+            Error::TooBigInt(_) => 6,
+            Error::InvalidCharLiteral(_) => 7,
+            Error::UnknownIsa(_) => 8,
+            Error::RegisterIndexOutOfRange(_) => 9,
+        }
+    }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
@@ -59,10 +81,47 @@ pub enum Warning {
     DuplicatedIsa(Isa),
 }
 
+impl Warning {
+    pub fn errno(&self) -> u16 {
+        match self {
+            Warning::DuplicatedIsa(_) => 10,
+        }
+    }
+}
+
 #[derive(Clone, Hash, Default, Debug)]
 pub struct Issues<'i> {
     errors: Vec<(Error, Span<'i>)>,
     warnings: Vec<(Warning, Span<'i>)>,
+}
+
+impl<'i> Display for Issues<'i> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (error, span) in &self.errors {
+            let (line, col) = span.start_pos().line_col();
+            writeln!(
+                f,
+                "\x1B[1;31mError E{:04}:\x1B[0m \x1B[1;15m{}\x1B[0m",
+                error.errno(),
+                error
+            )?;
+            writeln!(f, "\x1B[1;34m   -->\x1B[0m line {}, column {}", line, col)?;
+            writeln!(f, "\x1B[1;34m     |\x1B[0m")?;
+            for (index, s) in span.lines().enumerate() {
+                write!(f, "\x1B[1;34m{:>4} |\x1B[0m {}", line + index, s)?;
+                write!(f, "\x1B[1;34m     |\x1B[1;31m{:1$}", "", col)?;
+                for _ in 0..(span.end() - span.start()) {
+                    f.write_char('^')?;
+                }
+                f.write_str("\x1B[0m\n")?;
+            }
+            writeln!(f, "")?;
+        }
+
+        // TODO: Print warnings
+
+        Ok(())
+    }
 }
 
 impl<'i> Issues<'i> {
@@ -70,6 +129,8 @@ impl<'i> Issues<'i> {
     pub fn push_warning(&mut self, warning: Warning, span: Span<'i>) {
         self.warnings.push((warning, span));
     }
+    pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
+    pub fn has_warnings(&self) -> bool { !self.warnings.is_empty() }
 }
 
 #[derive(Clone, Hash, Default, Debug)]
@@ -148,7 +209,9 @@ impl Analyze for Routine {
         let name = match routine_name.as_rule() {
             Rule::routine_main => ".MAIN",
             Rule::routine_name => routine_name.as_str(),
-            _ => unreachable!("lexer error: routine must always start with a name"),
+            _ => unreachable!(
+                "lexer error: routine must always start with a either .MAIN or .ROUTINE"
+            ),
         }
         .to_owned();
 
@@ -234,12 +297,22 @@ impl Analyze for Operand {
                 } else {
                     0u16
                 };
-                let index: u5 = iter
+
+                let index = iter
                     .next()
                     .expect("lexer error: register operand not specifying index")
-                    .as_str()
+                    .as_str();
+                let index: u8 = index
                     .parse()
-                    .expect("lexer error: register index is not an integer");
+                    .expect(&format!("lexer error: register index `{}` is not an integer", index));
+                let index = index
+                    .checked_sub(1)
+                    .ok_or(OverflowError { max: 0, value: 0 })
+                    .and_then(u5::try_from)
+                    .unwrap_or_else(|_| {
+                        issues.push_error(Error::RegisterIndexOutOfRange(index), span.clone());
+                        u5::with(0)
+                    });
                 let set = match family.as_rule() {
                     Rule::reg_a => {
                         let a = RegA::with(member).unwrap_or_else(|| {

@@ -43,7 +43,7 @@ loop:               swp     a8[1],a8[2]
                     mul.uc  a32[12],a32[13]
                     div.uc  a32[12],a32[13]
                     put     $f1,f32[12]
-                    put     $f2,f32[13]
+                    put     5.17,f32[13]
                     add.z   f32[12],f32[13]
                     sub.n   f32[13],f32[12]
                     mul.c   f32[12],f32[13]
@@ -79,5 +79,5 @@ loop:               swp     a8[1],a8[2]
 done:               ret
 
 .CONST ; Constant data segment
-                    $f1 =   2.13
-                    $f2 =   5.17
+                    $not_used = "some string"
+                    $f1 = 2.13 ; see above

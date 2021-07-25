@@ -4,7 +4,7 @@ bech32 = _{ ASCII_ALPHANUMERIC+ }
 COMMENT = _{ ";" ~ (!NEWLINE ~ ANY)* }
 WHITESPACE = _{ " " | "\t" }
 
-isae_name = { ASCII_ALPHA_UPPER+ }
+isae_name = { ASCII_ALPHA_UPPER{2,} }
 isae = { ".ISAE" ~ (isae_name | NEWLINE)+ }
 
 reg_a = @{ ^"a" }
@@ -56,25 +56,26 @@ call_name = { ident }
 call = { lib_name? ~ "->" ~ call_name }
 
 label = { ident }
+flag = { ASCII_ALPHA_LOWER }
 op = { ident }
 operand = _{ reg | call | lit | var | goto }
-flag = { ASCII_ALPHA }
-instruction = { (label ~ ":")? ~ NEWLINE* ~ op ~ ("." ~ flag+)? ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
+operator = ${ op ~ ("." ~ flag{1,2})? }
+instruction = { (label ~ ":")? ~ NEWLINE* ~ operator ~ (operand ~ ",")* ~ operand? ~ NEWLINE+ }
 
 routine_name = { ident }
 routine_main = { ".MAIN" ~ NEWLINE* }
-routine_decl = { ".ROUTINE" ~ routine_name ~ NEWLINE* }
+routine_decl = _{ ".ROUTINE" ~ routine_name ~ NEWLINE* }
 routine = { (routine_decl | routine_main) ~ instruction* }
 
 var_name = { ident }
 var = ${ "$" ~ var_name }
 
-const_decl = { var_name ~ "=" ~ lit ~ NEWLINE+ }
+const_decl = { var ~ "=" ~ lit ~ NEWLINE+ }
 data = { ".CONST" ~ NEWLINE* ~ const_decl* }
 
 input_name = { lit_str }
 input_decl = { var ~ input_name ~ NEWLINE+ }
-input = { ".INPUT" ~ NEWLINE* ~ input_decl+ }
+input = { ".INPUT" ~ NEWLINE* ~ input_decl* }
 
 segment = _{ isae | routine | libs | data | input }
 program = { SOI ~ segment+ ~ EOI }

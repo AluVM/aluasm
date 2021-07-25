@@ -51,6 +51,9 @@ fn main() {
         let pairs = AsmParser::parse(Rule::program, &s).expect("compilation error: ");
         let program = Program::analyze(pairs.into_iter().next().expect("program not found"));
 
-        println!("{:#?}", program);
+        eprintln!("{}", program.issues);
+        if !program.issues.has_errors() {
+            println!("{:#?}", program);
+        }
     }
 }
