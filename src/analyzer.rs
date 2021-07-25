@@ -48,21 +48,30 @@ pub enum Error {
 
     /// not a character literal: `{0}`
     InvalidCharLiteral(String),
+
+    /// unknown ISA extension ID `{0}`
+    UnknownIsa(String),
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
 #[display(doc_comments)]
-pub enum Warning {}
+pub enum Warning {
+    /// duplicated ISA extension declaration for `{0}`
+    DuplicatedIsa(Isa),
+}
 
 #[derive(Clone, Hash, Default, Debug)]
 pub struct Issues<'i> {
-    pub errors: Vec<(Error, Span<'i>)>,
-    pub warnings: Vec<(Warning, Span<'i>)>,
+    errors: Vec<(Error, Span<'i>)>,
+    warnings: Vec<(Warning, Span<'i>)>,
 }
 
 impl<'i> Issues<'i> {
     pub fn push_error(&mut self, error: Error, span: Span<'i>) {
         self.errors.push((error, span));
+    }
+    pub fn push_warning(&mut self, warning: Warning, span: Span<'i>) {
+        self.warnings.push((warning, span));
     }
 }
 
@@ -100,7 +109,26 @@ impl<'i> Program<'i> {
 
 impl<'i> Program<'i> {
     fn analyze_isae(&mut self, pair: Pair<'i, Rule>) {
-        for pair in pair.into_inner() {}
+        let mut set = bset![];
+        for pair in pair.into_inner() {
+            for isa in Isa::all() {
+                if isa.to_string() == pair.as_str() {
+                    if set.contains(&isa) {
+                        self.issues.push_warning(
+                            Warning::DuplicatedIsa(isa),
+                            pair.as_span(),
+                        );
+                    }
+                    set.insert(isa);
+                    continue;
+                }
+            }
+            self.issues.push_error(
+                Error::UnknownIsa(pair.as_str().to_string()),
+                pair.as_span(),
+            );
+        }
+        self.isae = set;
     }
 
     fn analyze_routine(&mut self, pair: Pair<'i, Rule>) {
@@ -310,7 +338,7 @@ impl Analyze for Operand {
                         }
                         RegAll::S
                     }
-                    _ => panic!(
+                    _ => unreachable!(
                         "lexer error: unexpected register family {}",
                         family.as_str()
                     ),
@@ -321,7 +349,10 @@ impl Analyze for Operand {
             Rule::lit => Operand::Lit(Literal::analyze(pair, issues)),
             Rule::var => Operand::Const(pair.as_str().to_owned()),
             Rule::goto => Operand::Goto(Goto::analyze(pair, issues)),
-            _ => panic!("lexer error: unexpected operand {}", pair.as_str()),
+            _ => unreachable!(
+                "lexer error: unexpected operand {}",
+                pair.as_str()
+            ),
         }
     }
 }
@@ -430,7 +461,7 @@ impl Analyze for Literal {
                 }
                 Literal::Char(s.as_bytes()[1])
             }
-            x => panic!(
+            x => unreachable!(
                 "lexer error: unexpected type `{:?}` for literal {}",
                 x,
                 pair.as_str()
@@ -476,7 +507,9 @@ impl Analyze for Goto {
                     Rule::goto_exact => Goto::Offset(Offset::Exact(offset)),
                     Rule::goto_fwd => Goto::Offset(Offset::Forward(offset)),
                     Rule::goto_rev => Goto::Offset(Offset::Backward(offset)),
-                    x => panic!("lexer error: unknown goto rule `{:?}`", x),
+                    x => {
+                        unreachable!("lexer error: unknown goto rule `{:?}`", x)
+                    }
                 }
             }
         }
