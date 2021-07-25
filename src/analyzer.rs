@@ -20,8 +20,7 @@ use pest::iterators::Pair;
 use pest::Span;
 
 use crate::ast::{
-    Const, FlagSet, Goto, Instruction, IntBase, Literal, Offset, Operand,
-    Operator, Routine, Var,
+    Const, FlagSet, Goto, Instruction, IntBase, Literal, Offset, Operand, Operator, Routine, Var,
 };
 use crate::Rule;
 
@@ -67,9 +66,7 @@ pub struct Issues<'i> {
 }
 
 impl<'i> Issues<'i> {
-    pub fn push_error(&mut self, error: Error, span: Span<'i>) {
-        self.errors.push((error, span));
-    }
+    pub fn push_error(&mut self, error: Error, span: Span<'i>) { self.errors.push((error, span)); }
     pub fn push_warning(&mut self, warning: Warning, span: Span<'i>) {
         self.warnings.push((warning, span));
     }
@@ -97,10 +94,7 @@ impl<'i> Program<'i> {
                 Rule::data => program.analyze_const(pair),
                 Rule::input => program.analyze_input(pair),
                 Rule::EOI => {}
-                _ => unreachable!(
-                    "lexer error: unknown program segment `{:?}`",
-                    pair.as_rule()
-                ),
+                _ => unreachable!("lexer error: unknown program segment `{:?}`", pair.as_rule()),
             };
         }
         program
@@ -114,19 +108,13 @@ impl<'i> Program<'i> {
             for isa in Isa::all() {
                 if isa.to_string() == pair.as_str() {
                     if set.contains(&isa) {
-                        self.issues.push_warning(
-                            Warning::DuplicatedIsa(isa),
-                            pair.as_span(),
-                        );
+                        self.issues.push_warning(Warning::DuplicatedIsa(isa), pair.as_span());
                     }
                     set.insert(isa);
                     continue;
                 }
             }
-            self.issues.push_error(
-                Error::UnknownIsa(pair.as_str().to_string()),
-                pair.as_span(),
-            );
+            self.issues.push_error(Error::UnknownIsa(pair.as_str().to_string()), pair.as_span());
         }
         self.isae = set;
     }
@@ -135,24 +123,17 @@ impl<'i> Program<'i> {
         let span = pair.as_span();
         let routine = Routine::analyze(pair, &mut self.issues);
         if self.code.contains_key(&routine.name) {
-            self.issues
-                .push_error(Error::RepeatedRoutineName(routine.name), span);
+            self.issues.push_error(Error::RepeatedRoutineName(routine.name), span);
         } else {
             self.code.insert(routine.name.clone(), routine);
         }
     }
 
-    fn analyze_libs(&mut self, pair: Pair<'i, Rule>) {
-        for pair in pair.into_inner() {}
-    }
+    fn analyze_libs(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
 
-    fn analyze_const(&mut self, pair: Pair<'i, Rule>) {
-        for pair in pair.into_inner() {}
-    }
+    fn analyze_const(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
 
-    fn analyze_input(&mut self, pair: Pair<'i, Rule>) {
-        for pair in pair.into_inner() {}
-    }
+    fn analyze_input(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
 }
 
 trait Analyze {
@@ -163,14 +144,11 @@ impl Analyze for Routine {
     fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
         let mut iter = pair.into_inner();
 
-        let routine_name =
-            iter.next().expect("lexer error: routine must always has a name");
+        let routine_name = iter.next().expect("lexer error: routine must always has a name");
         let name = match routine_name.as_rule() {
             Rule::routine_main => ".MAIN",
             Rule::routine_name => routine_name.as_str(),
-            _ => unreachable!(
-                "lexer error: routine must always start with a name"
-            ),
+            _ => unreachable!("lexer error: routine must always start with a name"),
         }
         .to_owned();
 
@@ -183,10 +161,7 @@ impl Analyze for Routine {
                 if let Some(label) = op.label.clone() {
                     if labels.contains_key(&label) {
                         issues.push_error(
-                            Error::RepeatedLabel {
-                                label,
-                                routine: name.clone(),
-                            },
+                            Error::RepeatedLabel { label, routine: name.clone() },
                             span,
                         );
                     } else {
@@ -211,15 +186,10 @@ impl Analyze for Instruction {
             }
             _ => None,
         };
-        let pair = iter
-            .next()
-            .expect("lexer error: label not followed by an instruction");
+        let pair = iter.next().expect("lexer error: label not followed by an instruction");
         let mnemonic = pair.as_str();
         let operator = Operator::from_str(mnemonic).unwrap_or_else(|_| {
-            issues.push_error(
-                Error::UnknownMnemonic(pair.as_str().to_owned()),
-                pair.as_span(),
-            );
+            issues.push_error(Error::UnknownMnemonic(pair.as_str().to_owned()), pair.as_span());
             Operator::nop
         });
 
@@ -228,20 +198,13 @@ impl Analyze for Instruction {
         for pair in iter {
             match pair.as_rule() {
                 Rule::flag => {
-                    let chr = pair
-                        .as_str()
-                        .chars()
-                        .nth(0)
-                        .expect("lexer error: flag without flag value");
+                    let chr =
+                        pair.as_str().chars().nth(0).expect("lexer error: flag without flag value");
                     match flags {
                         FlagSet::None => flags = FlagSet::One(chr),
-                        FlagSet::One(flag) => {
-                            flags = FlagSet::Double(flag, chr)
-                        }
-                        FlagSet::Double(f1, f2) => issues.push_error(
-                            Error::TooManyFlags(mnemonic.to_owned()),
-                            pair.as_span(),
-                        ),
+                        FlagSet::One(flag) => flags = FlagSet::Double(flag, chr),
+                        FlagSet::Double(f1, f2) => issues
+                            .push_error(Error::TooManyFlags(mnemonic.to_owned()), pair.as_span()),
                     }
                 }
                 _ => operands.push(Operand::analyze(pair, issues)),
@@ -258,29 +221,22 @@ impl Analyze for Operand {
             Rule::reg => {
                 let span = pair.as_span();
                 let mut iter = pair.into_inner();
-                let family = iter.next().expect(
-                    "lexer error: register operand not specifying family",
-                );
+                let family =
+                    iter.next().expect("lexer error: register operand not specifying family");
                 let member = if family.as_rule() != Rule::reg_f16b {
                     iter.next()
-                        .expect(
-                            "lexer error: register operand not specifying \
-                             member",
-                        )
+                        .expect("lexer error: register operand not specifying member")
                         .as_str()
                         .parse()
                         .expect(
-                            "lexer error: register family member must be \
-                             encoded as decimal number",
+                            "lexer error: register family member must be encoded as decimal number",
                         )
                 } else {
                     0u16
                 };
                 let index: u5 = iter
                     .next()
-                    .expect(
-                        "lexer error: register operand not specifying index",
-                    )
+                    .expect("lexer error: register operand not specifying index")
                     .as_str()
                     .parse()
                     .expect("lexer error: register index is not an integer");
@@ -288,10 +244,7 @@ impl Analyze for Operand {
                     Rule::reg_a => {
                         let a = RegA::with(member).unwrap_or_else(|| {
                             issues.push_error(
-                                Error::WrongRegister {
-                                    family: RegBlock::A,
-                                    member,
-                                },
+                                Error::WrongRegister { family: RegBlock::A, member },
                                 span,
                             );
                             RegA::A1024
@@ -300,26 +253,19 @@ impl Analyze for Operand {
                     }
                     Rule::reg_f16b => RegAll::F(RegF::F16B),
                     Rule::reg_f => {
-                        let f =
-                            RegF::with(member, false).unwrap_or_else(|| {
-                                issues.push_error(
-                                    Error::WrongRegister {
-                                        family: RegBlock::F,
-                                        member,
-                                    },
-                                    span,
-                                );
-                                RegF::F128
-                            });
+                        let f = RegF::with(member, false).unwrap_or_else(|| {
+                            issues.push_error(
+                                Error::WrongRegister { family: RegBlock::F, member },
+                                span,
+                            );
+                            RegF::F128
+                        });
                         RegAll::F(f)
                     }
                     Rule::reg_r => {
                         let r = RegR::with(member).unwrap_or_else(|| {
                             issues.push_error(
-                                Error::WrongRegister {
-                                    family: RegBlock::R,
-                                    member,
-                                },
+                                Error::WrongRegister { family: RegBlock::R, member },
                                 span,
                             );
                             RegR::R256
@@ -329,19 +275,15 @@ impl Analyze for Operand {
                     Rule::reg_s => {
                         if member != 16 {
                             issues.push_error(
-                                Error::WrongRegister {
-                                    family: RegBlock::S,
-                                    member,
-                                },
+                                Error::WrongRegister { family: RegBlock::S, member },
                                 span,
                             );
                         }
                         RegAll::S
                     }
-                    _ => unreachable!(
-                        "lexer error: unexpected register family {}",
-                        family.as_str()
-                    ),
+                    _ => {
+                        unreachable!("lexer error: unexpected register family {}", family.as_str())
+                    }
                 };
                 Operand::Reg { set, index: index.into() }
             }
@@ -349,29 +291,20 @@ impl Analyze for Operand {
             Rule::lit => Operand::Lit(Literal::analyze(pair, issues)),
             Rule::var => Operand::Const(pair.as_str().to_owned()),
             Rule::goto => Operand::Goto(Goto::analyze(pair, issues)),
-            _ => unreachable!(
-                "lexer error: unexpected operand {}",
-                pair.as_str()
-            ),
+            _ => unreachable!("lexer error: unexpected operand {}", pair.as_str()),
         }
     }
 }
 
 impl Analyze for Literal {
     fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
-        let pair = pair
-            .into_inner()
-            .next()
-            .expect("lexer error: literal without inner data");
+        let pair = pair.into_inner().next().expect("lexer error: literal without inner data");
         match pair.as_rule() {
             Rule::lit_dec => {
                 let val = pair.as_str();
                 Literal::Int(
                     u128::from_str(val)
-                        .expect(&format!(
-                            "lexer error: wrong decimal integer {}",
-                            val
-                        ))
+                        .expect(&format!("lexer error: wrong decimal integer {}", val))
                         .into(),
                     IntBase::Dec,
                 )
@@ -380,10 +313,7 @@ impl Analyze for Literal {
                 let val = pair.as_str();
                 Literal::Int(
                     u128::from_str_radix(&val[2..], 2)
-                        .expect(&format!(
-                            "lexer error: wrong binary integer {}",
-                            val
-                        ))
+                        .expect(&format!("lexer error: wrong binary integer {}", val))
                         .into(),
                     IntBase::Bin,
                 )
@@ -392,10 +322,7 @@ impl Analyze for Literal {
                 let val = pair.as_str();
                 Literal::Int(
                     u128::from_str_radix(&val[2..], 8)
-                        .expect(&format!(
-                            "lexer error: wrong octal integer {}",
-                            val
-                        ))
+                        .expect(&format!("lexer error: wrong octal integer {}", val))
                         .into(),
                     IntBase::Oct,
                 )
@@ -405,10 +332,7 @@ impl Analyze for Literal {
                 let hex = Vec::from_hex(&val[2..])
                     .expect(&format!("lexer error: wrong hex integer {}", val));
                 let i = u1024::from_be_slice(&hex).unwrap_or_else(|_| {
-                    issues.push_error(
-                        Error::TooBigInt(val.to_owned()),
-                        pair.as_span(),
-                    );
+                    issues.push_error(Error::TooBigInt(val.to_owned()), pair.as_span());
                     u1024::MIN
                 });
                 Literal::Int(i, IntBase::Hex)
@@ -417,26 +341,16 @@ impl Analyze for Literal {
                 let mut iter = pair.into_inner();
                 let significand_int = iter
                     .next()
-                    .expect(
-                        "lexer error: float without integer significand part",
-                    )
+                    .expect("lexer error: float without integer significand part")
                     .as_str()
                     .parse()
-                    .expect(
-                        "lexer error: float integer significand contains \
-                         wrong digits",
-                    );
+                    .expect("lexer error: float integer significand contains wrong digits");
                 let significand_rem = iter
                     .next()
-                    .expect(
-                        "lexer error: float without significand reminder part",
-                    )
+                    .expect("lexer error: float without significand reminder part")
                     .as_str()
                     .parse()
-                    .expect(
-                        "lexer error: float significand reminder contains \
-                         wrong digits",
-                    );
+                    .expect("lexer error: float significand reminder contains wrong digits");
                 let exponential = iter
                     .next()
                     .as_ref()
@@ -454,18 +368,13 @@ impl Analyze for Literal {
                 let s = pair.as_str();
                 let s = replace_special_chars(&s[1..s.len() - 1]);
                 if s.len() != 1 {
-                    issues.push_error(
-                        Error::InvalidCharLiteral(s.clone()),
-                        pair.as_span(),
-                    )
+                    issues.push_error(Error::InvalidCharLiteral(s.clone()), pair.as_span())
                 }
                 Literal::Char(s.as_bytes()[1])
             }
-            x => unreachable!(
-                "lexer error: unexpected type `{:?}` for literal {}",
-                x,
-                pair.as_str()
-            ),
+            x => {
+                unreachable!("lexer error: unexpected type `{:?}` for literal {}", x, pair.as_str())
+            }
         }
     }
 }
@@ -484,25 +393,18 @@ fn replace_special_chars(s: &str) -> String {
 impl Analyze for Goto {
     fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
         let mut iter = pair.into_inner();
-        let inner = iter.next().expect(
-            "lexer error: goto statement must contain either label name or an \
-             offset",
-        );
+        let inner = iter
+            .next()
+            .expect("lexer error: goto statement must contain either label name or an offset");
         match inner.as_rule() {
             Rule::goto_name => Goto::Label(inner.as_str().to_owned()),
             _ => {
                 let offset = iter
                     .next()
-                    .expect(
-                        "lexer error: offset-based goto statement must \
-                         contain offset value",
-                    )
+                    .expect("lexer error: offset-based goto statement must contain offset value")
                     .as_str()
                     .parse()
-                    .expect(
-                        "lexer error: offset in goto statement must be a \
-                         valid 16-bit integer",
-                    );
+                    .expect("lexer error: offset in goto statement must be a valid 16-bit integer");
                 match inner.as_rule() {
                     Rule::goto_exact => Goto::Offset(Offset::Exact(offset)),
                     Rule::goto_fwd => Goto::Offset(Offset::Forward(offset)),

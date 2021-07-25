@@ -48,11 +48,8 @@ fn main() {
 
         let mut s = String::new();
         fd.read_to_string(&mut s).expect("reading file");
-        let pairs =
-            AsmParser::parse(Rule::program, &s).expect("compilation error: ");
-        let program = Program::analyze(
-            pairs.into_iter().next().expect("program not found"),
-        );
+        let pairs = AsmParser::parse(Rule::program, &s).expect("compilation error: ");
+        let program = Program::analyze(pairs.into_iter().next().expect("program not found"));
 
         println!("{:#?}", program);
     }

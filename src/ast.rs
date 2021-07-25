@@ -164,11 +164,10 @@ impl Operator {
     pub const fn all() -> [Operator; 49] {
         use Operator::*;
         [
-            abs, add, and, call, clr, cnv, cpy, dec, div, dup, eq, extr, fail,
-            ge, gt, ifn, ifz, inc, inv, jif, jmp, le, lt, mov, mul, neg, put,
-            putif, read, rem, ret, rev, ripemd, scl, scr, secpadd, secpgen,
-            secpmul, secpneg, sha2, shl, shr, spy, st, sub, succ, swp, xor,
-            nop,
+            abs, add, and, call, clr, cnv, cpy, dec, div, dup, eq, extr, fail, ge, gt, ifn, ifz,
+            inc, inv, jif, jmp, le, lt, mov, mul, neg, put, putif, read, rem, ret, rev, ripemd,
+            scl, scr, secpadd, secpgen, secpmul, secpneg, sha2, shl, shr, spy, st, sub, succ, swp,
+            xor, nop,
         ]
     }
 }
