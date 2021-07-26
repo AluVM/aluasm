@@ -13,10 +13,10 @@ use std::str::FromStr;
 
 use aluvm::data::{ByteStr, MaybeNumber, Step};
 use aluvm::isa::{
-    ArithmeticOp, BitwiseOp, Bytecode, CmpOp, DigestOp, Flag, Instr, MoveOp, ParseFlagError, PutOp,
-    Secp256k1Op,
+    ArithmeticOp, BitwiseOp, Bytecode, CmpOp, ControlFlowOp, DigestOp, Flag, Instr, MoveOp,
+    ParseFlagError, PutOp, Secp256k1Op,
 };
-use aluvm::libs::{Cursor, LibSeg};
+use aluvm::libs::{Cursor, LibSeg, LibSite};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
 use amplify::num::u1024;
 use pest::Span;
@@ -292,6 +292,17 @@ impl<'i> ast::Instruction<'i> {
             };
         }
         match self.operator.0 {
+            Operator::read => Instr::Nop,
+
+            Operator::succ => Instr::ControlFlow(ControlFlowOp::Succ),
+            Operator::fail => Instr::ControlFlow(ControlFlowOp::Fail),
+            Operator::ret => Instr::ControlFlow(ControlFlowOp::Ret),
+            Operator::jif => Instr::ControlFlow(ControlFlowOp::Jif(0)),
+            Operator::jmp => Instr::ControlFlow(ControlFlowOp::Jmp(0)),
+            Operator::routine => Instr::ControlFlow(ControlFlowOp::Routine(0)),
+            Operator::exec => Instr::ControlFlow(ControlFlowOp::Exec(LibSite::default())),
+            Operator::call => Instr::ControlFlow(ControlFlowOp::Call(LibSite::default())),
+
             // *** Put operations
             Operator::clr => match reg! {0} {
                 RegAFR::A(a) => Instr::Put(PutOp::ClrA(a, idx! {0})),
@@ -692,18 +703,6 @@ impl<'i> ast::Instruction<'i> {
             }
 
             Operator::nop => Instr::Nop,
-
-            _ => Instr::Nop,
-            /*
-            Operator::call => {}
-            Operator::extr => {}
-            Operator::fail => {}
-            Operator::jif => {}
-            Operator::jmp => {}
-            Operator::read => {}
-            Operator::ret => {}
-            Operator::succ => {}
-             */
         }
     }
 }
