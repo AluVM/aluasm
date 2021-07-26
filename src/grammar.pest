@@ -42,7 +42,7 @@ lit = { lit_float | lit_hex | lit_oct | lit_bin | lit_dec | lit_str | lit_chr }
 lib_ident = { ident }
 lib_bech = @{ ^"alu1" ~ bech32 }
 lib_name = { lib_bech | lib_ident }
-lib_def = { lib_ident ~ lib_bech ~ NEWLINE+ }
+lib_def = { lib_ident ~ lib_ident ~ NEWLINE+ }
 libs = {  ".LIBS" ~ NEWLINE* ~ lib_def* }
 
 goto_fwd = @{ "+" }

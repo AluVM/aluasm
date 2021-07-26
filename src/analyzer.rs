@@ -13,7 +13,7 @@ use std::convert::TryFrom;
 use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::str::FromStr;
 
-use aluvm::libs::LibId;
+use aluvm::libs::{LibId, LibIdError};
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
 use amplify::hex::FromHex;
@@ -61,6 +61,12 @@ pub enum Error {
 
     /// register index `{0}` is out of range 1..=32
     RegisterIndexOutOfRange(u8),
+
+    /// re-definition of `{0}` library name
+    RepeatedLibName(String),
+
+    /// incorrect library id Bech32 string `{0}` ({1})
+    WrongLibId(String, LibIdError),
 }
 
 impl Issue for Error {
@@ -75,6 +81,8 @@ impl Issue for Error {
             Error::InvalidCharLiteral(_) => 7,
             Error::UnknownIsa(_) => 8,
             Error::RegisterIndexOutOfRange(_) => 9,
+            Error::RepeatedLibName(_) => 11,
+            Error::WrongLibId(_, _) => 12,
         }
     }
 
@@ -117,7 +125,7 @@ impl<'i> Display for Issues<'i> {
                 issue.errno(),
                 issue
             )?;
-            writeln!(f, "\x1B[1;34m   -->\x1B[0m line {}, column {}", line, col)?;
+            writeln!(f, "\x1B[1;34m   --> line {}, column {}", line, col)?;
             writeln!(f, "\x1B[1;34m     |\x1B[0m")?;
             for (index, s) in span.lines().enumerate() {
                 write!(f, "\x1B[1;34m{:>4} |\x1B[0m {}", line + index, s)?;
@@ -213,7 +221,32 @@ impl<'i> Program<'i> {
         }
     }
 
-    fn analyze_libs(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
+    fn analyze_libs(&mut self, pair: Pair<'i, Rule>) {
+        let issues = &mut self.issues;
+        let mut libs = bmap! {};
+        for pair in pair.into_inner() {
+            let mut iter = pair.into_inner();
+            let name = iter.next().expect("lexer error: library statement must start with name");
+            let id = iter.next().expect("lexer error: library statement must end with lib id");
+            if libs.contains_key(name.as_str()) {
+                self.issues
+                    .push_error(Error::RepeatedLibName(name.as_str().to_owned()), name.as_span());
+            } else {
+                match LibId::from_str(id.as_str()) {
+                    Ok(libid) => {
+                        libs.insert(name.as_str().to_owned(), libid);
+                    }
+                    Err(err) => {
+                        self.issues.push_error(
+                            Error::WrongLibId(id.as_str().to_owned(), err),
+                            id.as_span(),
+                        );
+                    }
+                }
+            }
+        }
+        self.libs = libs;
+    }
 
     fn analyze_const(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
 
