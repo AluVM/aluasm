@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
-use std::fmt::{self, Display, Formatter, Write};
+use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::str::FromStr;
 
 use aluvm::libs::LibId;
@@ -26,6 +26,11 @@ use crate::ast::{
     Const, FlagSet, Goto, Instruction, IntBase, Literal, Offset, Operand, Operator, Routine, Var,
 };
 use crate::Rule;
+
+pub trait Issue: Debug + Display {
+    fn errno(&self) -> u16;
+    fn is_error(&self) -> bool;
+}
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
 #[display(doc_comments)]
@@ -58,8 +63,8 @@ pub enum Error {
     RegisterIndexOutOfRange(u8),
 }
 
-impl Error {
-    pub fn errno(&self) -> u16 {
+impl Issue for Error {
+    fn errno(&self) -> u16 {
         match self {
             Error::RepeatedRoutineName(_) => 1,
             Error::UnknownMnemonic(_) => 2,
@@ -72,6 +77,9 @@ impl Error {
             Error::RegisterIndexOutOfRange(_) => 9,
         }
     }
+
+    #[inline]
+    fn is_error(&self) -> bool { true }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
@@ -81,12 +89,15 @@ pub enum Warning {
     DuplicatedIsa(Isa),
 }
 
-impl Warning {
-    pub fn errno(&self) -> u16 {
+impl Issue for Warning {
+    fn errno(&self) -> u16 {
         match self {
             Warning::DuplicatedIsa(_) => 10,
         }
     }
+
+    #[inline]
+    fn is_error(&self) -> bool { false }
 }
 
 #[derive(Clone, Hash, Default, Debug)]
@@ -97,13 +108,14 @@ pub struct Issues<'i> {
 
 impl<'i> Display for Issues<'i> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (error, span) in &self.errors {
+        fn _f(f: &mut Formatter<'_>, issue: &impl Issue, span: &Span) -> fmt::Result {
             let (line, col) = span.start_pos().line_col();
             writeln!(
                 f,
-                "\x1B[1;31mError E{:04}:\x1B[0m \x1B[1;15m{}\x1B[0m",
-                error.errno(),
-                error
+                "{} E{:04}:\x1B[0m \x1B[1;15m{}\x1B[0m",
+                if issue.is_error() { "\x1B[1;31mError" } else { "\x1B[1;33mWarning" },
+                issue.errno(),
+                issue
             )?;
             writeln!(f, "\x1B[1;34m   -->\x1B[0m line {}, column {}", line, col)?;
             writeln!(f, "\x1B[1;34m     |\x1B[0m")?;
@@ -115,10 +127,16 @@ impl<'i> Display for Issues<'i> {
                 }
                 f.write_str("\x1B[0m\n")?;
             }
-            writeln!(f, "")?;
+            writeln!(f, "")
+        };
+
+        for (error, span) in &self.errors {
+            _f(f, error, span)?;
         }
 
-        // TODO: Print warnings
+        for (warning, span) in &self.warnings {
+            _f(f, warning, span)?;
+        }
 
         Ok(())
     }
