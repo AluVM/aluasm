@@ -67,6 +67,12 @@ pub enum Error {
 
     /// incorrect library id Bech32 string `{0}` ({1})
     WrongLibId(String, LibIdError),
+
+    /// re-definition of `{0}` constant
+    RepeatedConstName(String),
+
+    /// re-definition of `{0}` input variable
+    RepeatedVarName(String),
 }
 
 impl Issue for Error {
@@ -83,6 +89,8 @@ impl Issue for Error {
             Error::RegisterIndexOutOfRange(_) => 9,
             Error::RepeatedLibName(_) => 11,
             Error::WrongLibId(_, _) => 12,
+            Error::RepeatedConstName(_) => 13,
+            Error::RepeatedVarName(_) => 14,
         }
     }
 
@@ -136,7 +144,7 @@ impl<'i> Display for Issues<'i> {
                 f.write_str("\x1B[0m\n")?;
             }
             writeln!(f, "")
-        };
+        }
 
         for (error, span) in &self.errors {
             _f(f, error, span)?;
@@ -156,7 +164,6 @@ impl<'i> Issues<'i> {
         self.warnings.push((warning, span));
     }
     pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
-    pub fn has_warnings(&self) -> bool { !self.warnings.is_empty() }
 }
 
 #[derive(Clone, Hash, Default, Debug)]
@@ -222,7 +229,6 @@ impl<'i> Program<'i> {
     }
 
     fn analyze_libs(&mut self, pair: Pair<'i, Rule>) {
-        let issues = &mut self.issues;
         let mut libs = bmap! {};
         for pair in pair.into_inner() {
             let mut iter = pair.into_inner();
@@ -248,9 +254,35 @@ impl<'i> Program<'i> {
         self.libs = libs;
     }
 
-    fn analyze_const(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
+    fn analyze_const(&mut self, pair: Pair<'i, Rule>) {
+        let issues = &mut self.issues;
+        let mut r#const = bmap! {};
+        for pair in pair.into_inner() {
+            let span = pair.as_span();
+            let c = Const::analyze(pair, issues);
+            if r#const.contains_key(&c.name) {
+                issues.push_error(Error::RepeatedConstName(c.name), span);
+            } else {
+                r#const.insert(c.name.clone(), c);
+            }
+        }
+        self.r#const = r#const;
+    }
 
-    fn analyze_input(&mut self, pair: Pair<'i, Rule>) { for pair in pair.into_inner() {} }
+    fn analyze_input(&mut self, pair: Pair<'i, Rule>) {
+        let issues = &mut self.issues;
+        let mut input = bmap! {};
+        for pair in pair.into_inner() {
+            let span = pair.as_span();
+            let v = Var::analyze(pair, issues);
+            if r#input.contains_key(&v.name) {
+                issues.push_error(Error::RepeatedVarName(v.name), span);
+            } else {
+                input.insert(v.name.clone(), v);
+            }
+        }
+        self.input = input;
+    }
 }
 
 trait Analyze {
@@ -326,7 +358,7 @@ impl Analyze for Instruction {
             match flags {
                 FlagSet::None => flags = FlagSet::One(chr),
                 FlagSet::One(flag) => flags = FlagSet::Double(flag, chr),
-                FlagSet::Double(f1, f2) => {
+                FlagSet::Double(_, _) => {
                     issues.push_error(Error::TooManyFlags(mnemonic.to_owned()), pair.as_span())
                 }
             }
@@ -532,7 +564,7 @@ fn replace_special_chars(s: &str) -> String {
 }
 
 impl Analyze for Goto {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+    fn analyze<'i>(pair: Pair<'i, Rule>, _issues: &mut Issues<'i>) -> Self {
         let mut iter = pair.into_inner();
         let inner = iter
             .next()
@@ -555,6 +587,43 @@ impl Analyze for Goto {
                     }
                 }
             }
+        }
+    }
+}
+
+impl Analyze for Const {
+    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let mut iter = pair.into_inner();
+        let name = iter
+            .next()
+            .expect("lexer error: const statement must start with name")
+            .as_str()
+            .to_owned();
+        let value = iter.next().expect("lexer error: const statement must end with value");
+        let value = Literal::analyze(value, issues);
+        Const { name, value }
+    }
+}
+
+impl Analyze for Var {
+    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let mut iter = pair.into_inner();
+        let name = iter
+            .next()
+            .expect("lexer error: input variable statement must start with name")
+            .as_str()
+            .to_owned();
+        let value = iter.next().expect(
+            "lexer error: input variable statement must contain description as string literal",
+        );
+        let value = Literal::analyze(value, issues);
+        match value {
+            Literal::String(info) => Var {
+                name,
+                info,
+                default: None, // TODO: support defaults in the grammar
+            },
+            _ => unreachable!("lexer error: input variable description must be a string literal"),
         }
     }
 }

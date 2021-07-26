@@ -7,13 +7,11 @@
 
 //! Abstract syntax tree data types
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::str::FromStr;
 
-use aluvm::isa::Isa;
-use aluvm::libs::LibId;
 use aluvm::reg::{Reg32, RegAll};
 use amplify::num::u1024;
 
