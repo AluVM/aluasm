@@ -12,7 +12,9 @@ use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
 use aluvm::data::{ByteStr, MaybeNumber, Step};
-use aluvm::isa::{ArithmeticOp, BitwiseOp, Bytecode, Flag, Instr, MoveOp, ParseFlagError, PutOp};
+use aluvm::isa::{
+    ArithmeticOp, BitwiseOp, Bytecode, CmpOp, Flag, Instr, MoveOp, ParseFlagError, PutOp,
+};
 use aluvm::libs::{Cursor, LibSeg};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, Register};
 use amplify::num::u1024;
@@ -363,6 +365,60 @@ impl<'i> ast::Instruction<'i> {
                 }
             }
 
+            // *** Comparison operations
+            Operator::eq => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAFR::A(a) => Instr::Cmp(CmpOp::EqA(flags!(), a, idx! {0}, idx! {1})),
+                    RegAFR::F(f) => Instr::Cmp(CmpOp::EqF(flags!(), f, idx! {0}, idx! {1})),
+                    RegAFR::R(r) => Instr::Cmp(CmpOp::EqR(flags!(), r, idx! {0}, idx! {1})),
+                }
+            }
+            Operator::gt => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAFR::A(a) => Instr::Cmp(CmpOp::GtA(flags!(), a, idx! {0}, idx! {1})),
+                    RegAFR::F(f) => Instr::Cmp(CmpOp::GtF(flags!(), f, idx! {0}, idx! {1})),
+                    RegAFR::R(r) => Instr::Cmp(CmpOp::GtR(r, idx! {0}, idx! {1})),
+                }
+            }
+            Operator::lt => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAFR::A(a) => Instr::Cmp(CmpOp::LtA(flags!(), a, idx! {0}, idx! {1})),
+                    RegAFR::F(f) => Instr::Cmp(CmpOp::LtF(flags!(), f, idx! {0}, idx! {1})),
+                    RegAFR::R(r) => Instr::Cmp(CmpOp::LtR(r, idx! {0}, idx! {1})),
+                }
+            }
+            Operator::ifn => match reg! {0} {
+                RegAR::A(a) => Instr::Cmp(CmpOp::IfNA(a, idx! {0})),
+                RegAR::R(r) => Instr::Cmp(CmpOp::IfNR(r, idx! {0})),
+            },
+            Operator::ifz => match reg! {0} {
+                RegAR::A(a) => Instr::Cmp(CmpOp::IfZA(a, idx! {0})),
+                RegAR::R(r) => Instr::Cmp(CmpOp::IfZR(r, idx! {0})),
+            },
+            Operator::stinv => Instr::Cmp(CmpOp::StInv),
+            Operator::st => Instr::Cmp(CmpOp::St(flags!(), reg! {0}, idx! {0})),
+
             // *** Arithmetic
             Operator::neg => Instr::Arithmetic(ArithmeticOp::Neg(reg! {0}, idx! {0})),
             Operator::inc => {
@@ -537,18 +593,10 @@ impl<'i> ast::Instruction<'i> {
             _ => Instr::Nop,
             /*
             Operator::call => {}
-            Operator::eq => {}
             Operator::extr => {}
             Operator::fail => {}
-            Operator::ge => {}
-            Operator::gt => {}
-            Operator::ifn => {}
-            Operator::ifz => {}
-            Operator::inv => {}
             Operator::jif => {}
             Operator::jmp => {}
-            Operator::le => {}
-            Operator::lt => {}
             Operator::read => {}
             Operator::ret => {}
             Operator::ripemd => {}
@@ -557,7 +605,6 @@ impl<'i> ast::Instruction<'i> {
             Operator::secpmul => {}
             Operator::secpneg => {}
             Operator::sha2 => {}
-            Operator::st => Instr::Cmp(CmpOp::St()),
             Operator::succ => {}
              */
         }
