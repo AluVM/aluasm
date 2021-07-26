@@ -12,6 +12,8 @@ extern crate amplify;
 
 mod analyzer;
 pub mod ast;
+mod compiler;
+mod issues;
 
 use std::fs::File;
 use std::io::Read;
@@ -20,7 +22,8 @@ use std::path::PathBuf;
 use clap::{AppSettings, Clap};
 use pest::Parser;
 
-use crate::analyzer::Program;
+use crate::ast::Program;
+pub use crate::issues::{Error, Issue, Issues, Warning};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]

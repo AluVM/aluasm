@@ -5,177 +5,25 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
-//! Analyzer code coverting abstract parse tree, returned by parser, into an
+//! Analyzer code converting abstract parse tree, returned by parser, into an
 //! abstract syntax tree (AST)
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
-use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::str::FromStr;
 
-use aluvm::libs::{LibId, LibIdError};
+use aluvm::libs::LibId;
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
 use amplify::hex::FromHex;
 use amplify::num::error::OverflowError;
 use amplify::num::{u1024, u5};
 use pest::iterators::Pair;
-use pest::Span;
 
 use crate::ast::{
-    Const, FlagSet, Goto, Instruction, IntBase, Literal, Offset, Operand, Operator, Routine, Var,
+    Const, FlagSet, Goto, Instruction, IntBase, Literal, Offset, Operand, Operator, Program,
+    Routine, Var,
 };
-use crate::Rule;
-
-pub trait Issue: Debug + Display {
-    fn errno(&self) -> u16;
-    fn is_error(&self) -> bool;
-}
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
-#[display(doc_comments)]
-pub enum Error {
-    /// re-definition of `{0}` routine
-    RepeatedRoutineName(String),
-
-    /// unknown operation mnemonic `{0}`
-    UnknownMnemonic(String),
-
-    /// repeated label `{label}` inside `{routine}` routine
-    RepeatedLabel { label: String, routine: String },
-
-    /// wrong register name `{family}{member}`
-    WrongRegister { family: RegBlock, member: u16 },
-
-    /// operator `{0}` has too many flags (more than 2)
-    TooManyFlags(String),
-
-    /// integer value `{0}` doesn't fit 1024 bits
-    TooBigInt(String),
-
-    /// not a character literal: `{0}`
-    InvalidCharLiteral(String),
-
-    /// unknown ISA extension ID `{0}`
-    UnknownIsa(String),
-
-    /// register index `{0}` is out of range 1..=32
-    RegisterIndexOutOfRange(u8),
-
-    /// re-definition of `{0}` library name
-    RepeatedLibName(String),
-
-    /// incorrect library id Bech32 string `{0}` ({1})
-    WrongLibId(String, LibIdError),
-
-    /// re-definition of `{0}` constant
-    RepeatedConstName(String),
-
-    /// re-definition of `{0}` input variable
-    RepeatedVarName(String),
-}
-
-impl Issue for Error {
-    fn errno(&self) -> u16 {
-        match self {
-            Error::RepeatedRoutineName(_) => 1,
-            Error::UnknownMnemonic(_) => 2,
-            Error::RepeatedLabel { .. } => 3,
-            Error::WrongRegister { .. } => 4,
-            Error::TooManyFlags(_) => 5,
-            Error::TooBigInt(_) => 6,
-            Error::InvalidCharLiteral(_) => 7,
-            Error::UnknownIsa(_) => 8,
-            Error::RegisterIndexOutOfRange(_) => 9,
-            Error::RepeatedLibName(_) => 11,
-            Error::WrongLibId(_, _) => 12,
-            Error::RepeatedConstName(_) => 13,
-            Error::RepeatedVarName(_) => 14,
-        }
-    }
-
-    #[inline]
-    fn is_error(&self) -> bool { true }
-}
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
-#[display(doc_comments)]
-pub enum Warning {
-    /// duplicated ISA extension declaration for `{0}`
-    DuplicatedIsa(Isa),
-}
-
-impl Issue for Warning {
-    fn errno(&self) -> u16 {
-        match self {
-            Warning::DuplicatedIsa(_) => 10,
-        }
-    }
-
-    #[inline]
-    fn is_error(&self) -> bool { false }
-}
-
-#[derive(Clone, Hash, Default, Debug)]
-pub struct Issues<'i> {
-    errors: Vec<(Error, Span<'i>)>,
-    warnings: Vec<(Warning, Span<'i>)>,
-}
-
-impl<'i> Display for Issues<'i> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        fn _f(f: &mut Formatter<'_>, issue: &impl Issue, span: &Span) -> fmt::Result {
-            let (line, col) = span.start_pos().line_col();
-            writeln!(
-                f,
-                "{} E{:04}:\x1B[0m \x1B[1;15m{}\x1B[0m",
-                if issue.is_error() { "\x1B[1;31mError" } else { "\x1B[1;33mWarning" },
-                issue.errno(),
-                issue
-            )?;
-            writeln!(f, "\x1B[1;34m   --> line {}, column {}", line, col)?;
-            writeln!(f, "\x1B[1;34m     |\x1B[0m")?;
-            for (index, s) in span.lines().enumerate() {
-                write!(f, "\x1B[1;34m{:>4} |\x1B[0m {}", line + index, s)?;
-                write!(f, "\x1B[1;34m     |\x1B[1;31m{:1$}", "", col)?;
-                for _ in 0..(span.end() - span.start()) {
-                    f.write_char('^')?;
-                }
-                f.write_str("\x1B[0m\n")?;
-            }
-            writeln!(f, "")
-        }
-
-        for (error, span) in &self.errors {
-            _f(f, error, span)?;
-        }
-
-        for (warning, span) in &self.warnings {
-            _f(f, warning, span)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<'i> Issues<'i> {
-    pub fn push_error(&mut self, error: Error, span: Span<'i>) { self.errors.push((error, span)); }
-    pub fn push_warning(&mut self, warning: Warning, span: Span<'i>) {
-        self.warnings.push((warning, span));
-    }
-    pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
-}
-
-#[derive(Clone, Hash, Default, Debug)]
-pub struct Program<'i> {
-    pub isae: BTreeSet<Isa>,
-    pub libs: BTreeMap<String, LibId>,
-    pub main: Option<Routine>,
-    pub code: BTreeMap<String, Routine>,
-    pub r#const: BTreeMap<String, Const>,
-    pub input: BTreeMap<String, Var>,
-    pub issues: Issues<'i>,
-}
+use crate::{Error, Issues, Rule, Warning};
 
 impl<'i> Program<'i> {
     pub fn analyze(pair: Pair<'i, Rule>) -> Self {
@@ -285,12 +133,13 @@ impl<'i> Program<'i> {
     }
 }
 
-trait Analyze {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self;
+trait Analyze<'i> {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self;
 }
 
-impl Analyze for Routine {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Routine<'i> {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let span = pair.as_span();
         let mut iter = pair.into_inner();
 
         let routine_name = iter.next().expect("lexer error: routine must always has a name");
@@ -310,30 +159,32 @@ impl Analyze for Routine {
                 let span = pair.as_span();
                 let op = Instruction::analyze(pair, issues);
                 if let Some(label) = op.label.clone() {
-                    if labels.contains_key(&label) {
+                    if labels.contains_key(&label.0) {
                         issues.push_error(
-                            Error::RepeatedLabel { label, routine: name.clone() },
+                            Error::RepeatedLabel { label: label.0, routine: name.clone() },
                             span,
                         );
                     } else {
-                        labels.insert(label, index as u16);
+                        labels.insert(label.0, index as u16);
                     }
                 }
                 op
             })
             .collect();
 
-        Routine { name, labels, code }
+        Routine { name, labels, code, span }
     }
 }
 
-impl Analyze for Instruction {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Instruction<'i> {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let span = pair.as_span();
         let mut iter = pair.into_inner();
+
         let label = match iter.peek() {
             Some(pair) if pair.as_rule() == Rule::label => {
                 let _ = iter.next();
-                Some(pair.as_str().to_owned())
+                Some((pair.as_str().to_owned(), pair.as_span()))
             }
             _ => None,
         };
@@ -343,10 +194,13 @@ impl Analyze for Instruction {
         let pair =
             inner.next().expect("lexer error: operator must be composed of mnemonic and flags");
         let mnemonic = pair.as_str();
-        let operator = Operator::from_str(mnemonic).unwrap_or_else(|_| {
-            issues.push_error(Error::UnknownMnemonic(pair.as_str().to_owned()), pair.as_span());
-            Operator::nop
-        });
+        let operator = (
+            Operator::from_str(mnemonic).unwrap_or_else(|_| {
+                issues.push_error(Error::UnknownMnemonic(pair.as_str().to_owned()), pair.as_span());
+                Operator::nop
+            }),
+            pair.as_span(),
+        );
 
         let mut flags = FlagSet::None;
         for pair in inner {
@@ -356,9 +210,9 @@ impl Analyze for Instruction {
             );
             let chr = pair.as_str().chars().nth(0).expect("lexer error: flag without flag value");
             match flags {
-                FlagSet::None => flags = FlagSet::One(chr),
-                FlagSet::One(flag) => flags = FlagSet::Double(flag, chr),
-                FlagSet::Double(_, _) => {
+                FlagSet::None => flags = FlagSet::One(chr, pair.as_span()),
+                FlagSet::One(flag, span) => flags = FlagSet::Double(flag, chr, span),
+                FlagSet::Double(_, _, _) => {
                     issues.push_error(Error::TooManyFlags(mnemonic.to_owned()), pair.as_span())
                 }
             }
@@ -369,12 +223,13 @@ impl Analyze for Instruction {
             operands.push(Operand::analyze(pair, issues))
         }
 
-        Instruction { label, operator, flags, operands }
+        Instruction { label, operator, flags, operands, span }
     }
 }
 
-impl Analyze for Operand {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Operand<'i> {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let span = pair.as_span();
         match pair.as_rule() {
             Rule::reg => {
                 let span = pair.as_span();
@@ -413,7 +268,7 @@ impl Analyze for Operand {
                         let a = RegA::with(member).unwrap_or_else(|| {
                             issues.push_error(
                                 Error::WrongRegister { family: RegBlock::A, member },
-                                span,
+                                span.clone(),
                             );
                             RegA::A1024
                         });
@@ -424,7 +279,7 @@ impl Analyze for Operand {
                         let f = RegF::with(member, false).unwrap_or_else(|| {
                             issues.push_error(
                                 Error::WrongRegister { family: RegBlock::F, member },
-                                span,
+                                span.clone(),
                             );
                             RegF::F128
                         });
@@ -434,7 +289,7 @@ impl Analyze for Operand {
                         let r = RegR::with(member).unwrap_or_else(|| {
                             issues.push_error(
                                 Error::WrongRegister { family: RegBlock::R, member },
-                                span,
+                                span.clone(),
                             );
                             RegR::R256
                         });
@@ -444,7 +299,7 @@ impl Analyze for Operand {
                         if member != 16 {
                             issues.push_error(
                                 Error::WrongRegister { family: RegBlock::S, member },
-                                span,
+                                span.clone(),
                             );
                         }
                         RegAll::S
@@ -453,19 +308,19 @@ impl Analyze for Operand {
                         unreachable!("lexer error: unexpected register family {}", family.as_str())
                     }
                 };
-                Operand::Reg { set, index: index.into() }
+                Operand::Reg { set, index: index.into(), span }
             }
-            Rule::call => Operand::Call(pair.as_str().to_owned()),
-            Rule::lit => Operand::Lit(Literal::analyze(pair, issues)),
-            Rule::var => Operand::Const(pair.as_str().to_owned()),
-            Rule::goto => Operand::Goto(Goto::analyze(pair, issues)),
-            _ => unreachable!("lexer error: unexpected operand {}", pair.as_str()),
+            Rule::call => Operand::Call(pair.as_str().to_owned(), span),
+            Rule::lit => Operand::Lit(Literal::analyze(pair, issues), span),
+            Rule::var => Operand::Const(pair.as_str().to_owned(), span),
+            Rule::goto => Operand::Goto(Goto::analyze(pair, issues), span),
+            _ => unreachable!("lexer error: unexpected operand {} at {:?}", pair.as_str(), span),
         }
     }
 }
 
-impl Analyze for Literal {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Literal {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
         let pair = pair.into_inner().next().expect("lexer error: literal without inner data");
         match pair.as_rule() {
             Rule::lit_dec => {
@@ -563,8 +418,8 @@ fn replace_special_chars(s: &str) -> String {
     // TODO: Remove hex and unicode escape sequences
 }
 
-impl Analyze for Goto {
-    fn analyze<'i>(pair: Pair<'i, Rule>, _issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Goto {
+    fn analyze(pair: Pair<'i, Rule>, _issues: &mut Issues<'i>) -> Self {
         let mut iter = pair.into_inner();
         let inner = iter
             .next()
@@ -591,8 +446,9 @@ impl Analyze for Goto {
     }
 }
 
-impl Analyze for Const {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Const<'i> {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let span = pair.as_span();
         let mut iter = pair.into_inner();
         let name = iter
             .next()
@@ -601,12 +457,13 @@ impl Analyze for Const {
             .to_owned();
         let value = iter.next().expect("lexer error: const statement must end with value");
         let value = Literal::analyze(value, issues);
-        Const { name, value }
+        Const { name, value, span }
     }
 }
 
-impl Analyze for Var {
-    fn analyze<'i>(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+impl<'i> Analyze<'i> for Var<'i> {
+    fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
+        let span = pair.as_span();
         let mut iter = pair.into_inner();
         let name = iter
             .next()
@@ -621,6 +478,7 @@ impl Analyze for Var {
             Literal::String(info) => Var {
                 name,
                 info,
+                span,
                 default: None, // TODO: support defaults in the grammar
             },
             _ => unreachable!("lexer error: input variable description must be a string literal"),
