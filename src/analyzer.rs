@@ -33,7 +33,7 @@ pub enum Error {
     /// re-definition of `{0}` routine
     RepeatedRoutineName(String),
 
-    /// unknown operation: `{0}`
+    /// unknown operation mnemonic `{0}`
     UnknownMnemonic(String),
 
     /// repeated label `{label}` inside `{routine}` routine
@@ -166,16 +166,21 @@ impl<'i> Program<'i> {
     fn analyze_isae(&mut self, pair: Pair<'i, Rule>) {
         let mut set = bset![];
         for pair in pair.into_inner() {
+            let mut found = false;
             for isa in Isa::all() {
                 if isa.to_string() == pair.as_str() {
                     if set.contains(&isa) {
                         self.issues.push_warning(Warning::DuplicatedIsa(isa), pair.as_span());
                     }
                     set.insert(isa);
-                    continue;
+                    found = true;
+                    break;
                 }
             }
-            self.issues.push_error(Error::UnknownIsa(pair.as_str().to_string()), pair.as_span());
+            if !found {
+                self.issues
+                    .push_error(Error::UnknownIsa(pair.as_str().to_string()), pair.as_span());
+            }
         }
         self.isae = set;
     }
@@ -249,7 +254,11 @@ impl Analyze for Instruction {
             }
             _ => None,
         };
+
         let pair = iter.next().expect("lexer error: label not followed by an instruction");
+        let mut inner = pair.into_inner();
+        let pair =
+            inner.next().expect("lexer error: operator must be composed of mnemonic and flags");
         let mnemonic = pair.as_str();
         let operator = Operator::from_str(mnemonic).unwrap_or_else(|_| {
             issues.push_error(Error::UnknownMnemonic(pair.as_str().to_owned()), pair.as_span());
@@ -257,21 +266,24 @@ impl Analyze for Instruction {
         });
 
         let mut flags = FlagSet::None;
+        for pair in inner {
+            debug_assert!(
+                pair.as_rule() == Rule::flag,
+                "lexer error: mnemonic is followed by non-flag rules"
+            );
+            let chr = pair.as_str().chars().nth(0).expect("lexer error: flag without flag value");
+            match flags {
+                FlagSet::None => flags = FlagSet::One(chr),
+                FlagSet::One(flag) => flags = FlagSet::Double(flag, chr),
+                FlagSet::Double(f1, f2) => {
+                    issues.push_error(Error::TooManyFlags(mnemonic.to_owned()), pair.as_span())
+                }
+            }
+        }
+
         let mut operands = vec![];
         for pair in iter {
-            match pair.as_rule() {
-                Rule::flag => {
-                    let chr =
-                        pair.as_str().chars().nth(0).expect("lexer error: flag without flag value");
-                    match flags {
-                        FlagSet::None => flags = FlagSet::One(chr),
-                        FlagSet::One(flag) => flags = FlagSet::Double(flag, chr),
-                        FlagSet::Double(f1, f2) => issues
-                            .push_error(Error::TooManyFlags(mnemonic.to_owned()), pair.as_span()),
-                    }
-                }
-                _ => operands.push(Operand::analyze(pair, issues)),
-            }
+            operands.push(Operand::analyze(pair, issues))
         }
 
         Instruction { label, operator, flags, operands }
@@ -402,8 +414,13 @@ impl Analyze for Literal {
             }
             Rule::lit_hex => {
                 let val = pair.as_str();
-                let hex = Vec::from_hex(&val[2..])
+                let mut hex = Vec::from_hex(&val[2..])
                     .expect(&format!("lexer error: wrong hex integer {}", val));
+                if hex.len() < 128 {
+                    let mut vec = vec![0; 128];
+                    vec[128 - hex.len()..].copy_from_slice(&hex);
+                    hex = vec;
+                }
                 let i = u1024::from_be_slice(&hex).unwrap_or_else(|_| {
                     issues.push_error(Error::TooBigInt(val.to_owned()), pair.as_span());
                     u1024::MIN
