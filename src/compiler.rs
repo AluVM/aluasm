@@ -9,12 +9,14 @@
 
 use std::convert::{TryFrom, TryInto};
 
+use aluvm::data::Step;
 use aluvm::isa::{ArithmeticOp, Bytecode, CmpOp, Flag, Instr, IntFlags, ParseFlagError};
 use aluvm::libs::{Cursor, LibSeg};
 use aluvm::reg::{Reg32, RegAF, RegAll, Register};
+use amplify::num::u1024;
 use pest::Span;
 
-use crate::ast::{self, FlagSet, Operand, Operator};
+use crate::ast::{self, FlagSet, Literal, Operand, Operator};
 use crate::{Error, Issues};
 
 pub mod obj {
@@ -50,7 +52,7 @@ impl<'i> ast::Routine<'i> {
     pub fn compile(&self, issues: &mut Issues<'i>) -> obj::Routine {
         let mut bytecode = Vec::with_capacity(self.code.len() * 3);
         let mut map = Vec::with_capacity(self.code.len());
-        let mut libs = LibSeg::default();
+        let libs = LibSeg::default();
         let mut writer = Cursor::new(&mut bytecode, &libs);
         for (index, line) in self.code.iter().enumerate() {
             map[index] = writer.pos();
@@ -191,15 +193,77 @@ impl<'i> ast::Instruction<'i> {
             };
         }
         match self.operator.0 {
-            Operator::abs => Instr::Arithmetic(ArithmeticOp::Abs(reg! {0}, idx! {1})),
-            Operator::add => match reg! {0} {
+            Operator::neg => Instr::Arithmetic(ArithmeticOp::Neg(reg! {0}, idx! {1})),
+            Operator::inc => {
+                Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {1}, Step::with(1)))
+            }
+            Operator::dec => {
+                Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {1}, Step::with(-1)))
+            }
+            Operator::add => {
+                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
+                    if step > u1024::from(i16::MAX as u16) {
+                        step = u1024::from(1u64);
+                        issues.push_error(Error::StepTooLarge(self.operator.0), span.clone());
+                    }
+                    Instr::Arithmetic(ArithmeticOp::Stp(
+                        reg! {0},
+                        idx! {1},
+                        Step::with(step.low_u32() as i16),
+                    ))
+                } else {
+                    match reg! {0} {
+                        RegAF::A(a) => {
+                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {1}, idx! {2}))
+                        }
+                        RegAF::F(f) => {
+                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {1}, idx! {2}))
+                        }
+                    }
+                }
+            }
+            Operator::sub => {
+                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
+                    if step > u1024::from(i16::MAX as u16) {
+                        step = u1024::from(1u64);
+                        issues.push_error(Error::StepTooLarge(self.operator.0), span.clone());
+                    }
+                    Instr::Arithmetic(ArithmeticOp::Stp(
+                        reg! {0},
+                        idx! {1},
+                        Step::with(-(step.low_u32() as i16)),
+                    ))
+                } else {
+                    match reg! {0} {
+                        RegAF::A(a) => {
+                            Instr::Arithmetic(ArithmeticOp::SubA(flags!(), a, idx! {1}, idx! {2}))
+                        }
+                        RegAF::F(f) => {
+                            Instr::Arithmetic(ArithmeticOp::SubF(flags!(), f, idx! {1}, idx! {2}))
+                        }
+                    }
+                }
+            }
+            Operator::mul => match reg! {0} {
                 RegAF::A(a) => {
-                    Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {1}, idx! {2}))
+                    Instr::Arithmetic(ArithmeticOp::MulA(flags!(), a, idx! {1}, idx! {2}))
                 }
                 RegAF::F(f) => {
-                    Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {1}, idx! {2}))
+                    Instr::Arithmetic(ArithmeticOp::MulF(flags!(), f, idx! {1}, idx! {2}))
                 }
             },
+            Operator::div => match reg! {0} {
+                RegAF::A(a) => {
+                    Instr::Arithmetic(ArithmeticOp::DivA(flags!(), a, idx! {1}, idx! {2}))
+                }
+                RegAF::F(f) => {
+                    Instr::Arithmetic(ArithmeticOp::DivF(flags!(), f, idx! {1}, idx! {2}))
+                }
+            },
+            Operator::rem => {
+                Instr::Arithmetic(ArithmeticOp::Rem(reg! {0}, idx! {1}, reg! {2}, idx! {3}))
+            }
+            Operator::abs => Instr::Arithmetic(ArithmeticOp::Abs(reg! {0}, idx! {1})),
 
             Operator::nop => Instr::Nop,
 
@@ -210,8 +274,6 @@ impl<'i> ast::Instruction<'i> {
             Operator::clr => {}
             Operator::cnv => {}
             Operator::cpy => {}
-            Operator::dec => {}
-            Operator::div => {}
             Operator::dup => {}
             Operator::eq => {}
             Operator::extr => {}
@@ -220,19 +282,15 @@ impl<'i> ast::Instruction<'i> {
             Operator::gt => {}
             Operator::ifn => {}
             Operator::ifz => {}
-            Operator::inc => {}
             Operator::inv => {}
             Operator::jif => {}
             Operator::jmp => {}
             Operator::le => {}
             Operator::lt => {}
             Operator::mov => {}
-            Operator::mul => {}
-            Operator::neg => {}
             Operator::put => {}
             Operator::putif => {}
             Operator::read => {}
-            Operator::rem => {}
             Operator::ret => {}
             Operator::rev => {}
             Operator::ripemd => {}
@@ -247,7 +305,6 @@ impl<'i> ast::Instruction<'i> {
             Operator::shr => {}
             Operator::spy => {}
             Operator::st => Instr::Cmp(CmpOp::St()),
-            Operator::sub => {}
             Operator::succ => {}
             Operator::swp => {}
             Operator::xor => {}

@@ -86,6 +86,9 @@ pub enum Error {
 
     /// program data exceeds maximum length
     DataLengthOverflow,
+
+    /// integer literal for `{0}` must has value smaller than 32768
+    StepTooLarge(Operator),
 }
 
 impl Issue for Error {
@@ -118,6 +121,7 @@ impl Issue for Error {
             },
             Error::CodeLengthOverflow => 25,
             Error::DataLengthOverflow => 26,
+            Error::StepTooLarge(_) => 27,
         }
     }
 
