@@ -10,9 +10,9 @@
 use std::convert::{TryFrom, TryInto};
 
 use aluvm::data::{ByteStr, Step};
-use aluvm::isa::{ArithmeticOp, BitwiseOp, Bytecode, Flag, Instr, ParseFlagError};
+use aluvm::isa::{ArithmeticOp, BitwiseOp, Bytecode, Flag, Instr, MoveOp, ParseFlagError};
 use aluvm::libs::{Cursor, LibSeg};
-use aluvm::reg::{Reg32, RegAF, RegAR, RegAll, Register};
+use aluvm::reg::{Reg32, RegAF, RegAFR, RegAR, RegAll, Register};
 use amplify::num::u1024;
 use pest::Span;
 
@@ -212,6 +212,64 @@ impl<'i> ast::Instruction<'i> {
             };
         }
         match self.operator.0 {
+            // *** Move operations
+            Operator::dup => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAFR::A(a) => Instr::Move(MoveOp::DupA(a, idx! {0}, idx! {1})),
+                    RegAFR::F(f) => Instr::Move(MoveOp::DupF(f, idx! {0}, idx! {1})),
+                    RegAFR::R(r) => Instr::Move(MoveOp::DupR(r, idx! {0}, idx! {1})),
+                }
+            }
+            Operator::mov => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAFR::A(a) => Instr::Move(MoveOp::MovA(a, idx! {0}, idx! {1})),
+                    RegAFR::F(f) => Instr::Move(MoveOp::MovF(f, idx! {0}, idx! {1})),
+                    RegAFR::R(r) => Instr::Move(MoveOp::MovR(r, idx! {0}, idx! {1})),
+                }
+            }
+            Operator::cnv => match (reg! {0}, reg! {1}) {
+                (RegAF::A(a1), RegAF::A(a2)) => {
+                    Instr::Move(MoveOp::CnvA(a1, idx! {0}, a2, idx! {1}))
+                }
+                (RegAF::F(f1), RegAF::F(f2)) => {
+                    Instr::Move(MoveOp::CnvF(f1, idx! {0}, f2, idx! {1}))
+                }
+                (RegAF::A(a), RegAF::F(f)) => Instr::Move(MoveOp::CnvAF(a, idx! {0}, f, idx! {1})),
+                (RegAF::F(f), RegAF::A(a)) => Instr::Move(MoveOp::CnvFA(f, idx! {0}, a, idx! {1})),
+            },
+            Operator::cpy => match reg! {0} {
+                RegAR::A(a) => Instr::Move(MoveOp::CpyA(a, idx! {0}, reg! {1}, idx! {1})),
+                RegAR::R(r) => Instr::Move(MoveOp::CpyR(r, idx! {0}, reg! {1}, idx! {1})),
+            },
+            Operator::spy => Instr::Move(MoveOp::SpyAR(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
+            Operator::swp => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAF::A(a) => Instr::Move(MoveOp::SwpA(a, idx! {0}, idx! {1})),
+                    RegAF::F(f) => Instr::Move(MoveOp::SwpF(f, idx! {0}, idx! {1})),
+                }
+            }
+
             // *** Arithmetic
             Operator::neg => Instr::Arithmetic(ArithmeticOp::Neg(reg! {0}, idx! {0})),
             Operator::inc => {
@@ -387,9 +445,6 @@ impl<'i> ast::Instruction<'i> {
             /*
             Operator::call => {}
             Operator::clr => {}
-            Operator::cnv => {}
-            Operator::cpy => {}
-            Operator::dup => {}
             Operator::eq => {}
             Operator::extr => {}
             Operator::fail => {}
@@ -402,7 +457,6 @@ impl<'i> ast::Instruction<'i> {
             Operator::jmp => {}
             Operator::le => {}
             Operator::lt => {}
-            Operator::mov => {}
             Operator::put => {}
             Operator::putif => {}
             Operator::read => {}
@@ -413,10 +467,8 @@ impl<'i> ast::Instruction<'i> {
             Operator::secpmul => {}
             Operator::secpneg => {}
             Operator::sha2 => {}
-            Operator::spy => {}
             Operator::st => Instr::Cmp(CmpOp::St()),
             Operator::succ => {}
-            Operator::swp => {}
              */
         }
     }
