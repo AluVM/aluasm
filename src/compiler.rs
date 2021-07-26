@@ -13,10 +13,11 @@ use std::str::FromStr;
 
 use aluvm::data::{ByteStr, MaybeNumber, Step};
 use aluvm::isa::{
-    ArithmeticOp, BitwiseOp, Bytecode, CmpOp, Flag, Instr, MoveOp, ParseFlagError, PutOp,
+    ArithmeticOp, BitwiseOp, Bytecode, CmpOp, DigestOp, Flag, Instr, MoveOp, ParseFlagError, PutOp,
+    Secp256k1Op,
 };
 use aluvm::libs::{Cursor, LibSeg};
-use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, Register};
+use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
 use amplify::num::u1024;
 use pest::Span;
 use rustc_apfloat::ieee;
@@ -271,17 +272,17 @@ impl<'i> ast::Instruction<'i> {
 
     pub fn compile(&'i self, program: &'i ast::Program, issues: &mut Issues<'i>) -> Instr {
         macro_rules! reg {
-            ($no:literal) => {
+            ($no:expr) => {
                 self.reg($no, issues)
             };
         }
         macro_rules! idx {
-            ($no:literal) => {
+            ($no:expr) => {
                 self.idx($no, issues)
             };
         }
         macro_rules! val {
-            ($no:literal, $reg:ident) => {
+            ($no:expr, $reg:ident) => {
                 Box::new(self.val($no, $reg, &program.r#const, issues))
             };
         }
@@ -588,6 +589,108 @@ impl<'i> ast::Instruction<'i> {
                 RegAR::R(r) => Instr::Bitwise(BitwiseOp::RevR(r, idx! {0})),
             },
 
+            // *** Digest operations
+            Operator::ripemd => {
+                let reg: RegR = reg! {1};
+                if reg != RegR::R160 {
+                    issues.push_error(
+                        Error::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "r160 register",
+                        },
+                        self.operands[1].as_span().clone(),
+                    );
+                    return Instr::Nop;
+                }
+                Instr::Digest(DigestOp::Ripemd(idx! {0}, idx! {1}))
+            }
+            Operator::sha2 => match reg! {1} {
+                RegR::R256 => Instr::Digest(DigestOp::Sha256(idx! {0}, idx! {1})),
+                RegR::R512 => Instr::Digest(DigestOp::Sha512(idx! {0}, idx! {1})),
+                _ => {
+                    issues.push_error(
+                        Error::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "r256 or r512 registers",
+                        },
+                        self.operands[1].as_span().clone(),
+                    );
+                    return Instr::Nop;
+                }
+            },
+
+            // *** Elliptic curve operations
+            Operator::secpgen => {
+                for r in 0..=1 {
+                    let reg: RegR = reg! {r};
+                    if reg != [RegR::R256, RegR::R512][r as usize] {
+                        issues.push_error(
+                            Error::OperandWrongReg {
+                                operator: self.operator.0,
+                                pos: r + 1,
+                                expected: if r == 0 { "r256 register" } else { "r512 register" },
+                            },
+                            self.operands[r as usize].as_span().clone(),
+                        );
+                        return Instr::Nop;
+                    }
+                }
+                Instr::Secp256k1(Secp256k1Op::Gen(idx! {0}, idx! {1}))
+            }
+            Operator::secpneg => {
+                for r in 0..=1 {
+                    let reg: RegR = reg! {r};
+                    if reg != RegR::R512 {
+                        issues.push_error(
+                            Error::OperandWrongReg {
+                                operator: self.operator.0,
+                                pos: r + 1,
+                                expected: "r512 register",
+                            },
+                            self.operands[r as usize].as_span().clone(),
+                        );
+                        return Instr::Nop;
+                    }
+                }
+                Instr::Secp256k1(Secp256k1Op::Neg(idx! {0}, idx! {1}))
+            }
+            Operator::secpadd => {
+                for r in 0..=1 {
+                    let reg: RegR = reg! {r};
+                    if reg != RegR::R512 {
+                        issues.push_error(
+                            Error::OperandWrongReg {
+                                operator: self.operator.0,
+                                pos: r + 1,
+                                expected: "r512 register",
+                            },
+                            self.operands[r as usize].as_span().clone(),
+                        );
+                        return Instr::Nop;
+                    }
+                }
+                Instr::Secp256k1(Secp256k1Op::Add(idx! {0}, idx! {1}))
+            }
+            Operator::secpmul => {
+                for r in 1..=2 {
+                    let reg: RegR = reg! {r};
+                    if reg != RegR::R512 {
+                        issues.push_error(
+                            Error::OperandWrongReg {
+                                operator: self.operator.0,
+                                pos: r + 1,
+                                expected: "r512 register",
+                            },
+                            self.operands[r as usize].as_span().clone(),
+                        );
+                        return Instr::Nop;
+                    }
+                }
+                Instr::Secp256k1(Secp256k1Op::Mul(reg! {0}, idx! {0}, idx! {1}, idx! {2}))
+            }
+
             Operator::nop => Instr::Nop,
 
             _ => Instr::Nop,
@@ -599,12 +702,6 @@ impl<'i> ast::Instruction<'i> {
             Operator::jmp => {}
             Operator::read => {}
             Operator::ret => {}
-            Operator::ripemd => {}
-            Operator::secpadd => {}
-            Operator::secpgen => {}
-            Operator::secpmul => {}
-            Operator::secpneg => {}
-            Operator::sha2 => {}
             Operator::succ => {}
              */
         }

@@ -14,7 +14,7 @@ exclude = [".github"]
 
 [dependencies]
 amplify = "3.7"
-aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm", features = ["std"] }
+aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm", features = ["all"] }
 # alure = { version = "0.1", path = "../alure" }
 rustc_apfloat = "0.1.3"
 pest = "2.1"
