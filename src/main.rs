@@ -56,7 +56,11 @@ fn main() {
 
         eprintln!("{}", program.issues);
         if !program.issues.has_errors() {
-            println!("{:#?}", program);
+            let program = program.compile();
+            eprintln!("{}", program.issues);
+            if !program.issues.has_errors() {
+                println!("{:?}", program.routines);
+            }
         }
     }
 }

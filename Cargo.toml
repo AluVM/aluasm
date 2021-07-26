@@ -14,7 +14,7 @@ exclude = [".github"]
 
 [dependencies]
 amplify = "3.7"
-aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm" }
+aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm", features = ["std"] }
 # alure = { version = "0.1", path = "../alure" }
 pest = "2.1"
 pest_derive = "2.1"

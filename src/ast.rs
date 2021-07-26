@@ -89,6 +89,18 @@ pub enum Operand<'i> {
     Const(String, Span<'i>),
 }
 
+impl<'i> Operand<'i> {
+    pub fn as_span(&self) -> &Span {
+        match self {
+            Operand::Reg { span, .. }
+            | Operand::Goto(_, span)
+            | Operand::Call(_, span)
+            | Operand::Lit(_, span)
+            | Operand::Const(_, span) => span,
+        }
+    }
+}
+
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub enum Goto {
     Label(String),
@@ -154,6 +166,8 @@ pub enum Operator {
     mov,
     mul,
     neg,
+    not,
+    or,
     put,
     putif,
     read,
@@ -180,13 +194,13 @@ pub enum Operator {
 }
 
 impl Operator {
-    pub const fn all() -> [Operator; 49] {
+    pub const fn all() -> [Operator; 51] {
         use Operator::*;
         [
             abs, add, and, call, clr, cnv, cpy, dec, div, dup, eq, extr, fail, ge, gt, ifn, ifz,
-            inc, inv, jif, jmp, le, lt, mov, mul, neg, put, putif, read, rem, ret, rev, ripemd,
-            scl, scr, secpadd, secpgen, secpmul, secpneg, sha2, shl, shr, spy, st, sub, succ, swp,
-            xor, nop,
+            inc, inv, jif, jmp, le, lt, mov, mul, neg, not, or, put, putif, read, rem, ret, rev,
+            ripemd, scl, scr, secpadd, secpgen, secpmul, secpneg, sha2, shl, shr, spy, st, sub,
+            succ, swp, xor, nop,
         ]
     }
 }

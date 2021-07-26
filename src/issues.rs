@@ -8,7 +8,7 @@
 use std::fmt::{self, Debug, Display, Formatter, Write};
 
 use aluvm::isa::{BytecodeError, ParseFlagError};
-use aluvm::libs::{LibIdError, WriteError};
+use aluvm::libs::{LibIdError, LibSegOverflow, WriteError};
 use aluvm::reg::RegBlock;
 use aluvm::Isa;
 use pest::Span;
@@ -68,6 +68,9 @@ pub enum Error {
     /// operator `{operator}` requires different register type ({expected}) as its {pos} operand
     OperandWrongReg { operator: Operator, pos: u8, expected: &'static str },
 
+    /// operator `{0}` can be applied to registers of the same type only
+    OperandRegMutBeEqual(Operator),
+
     /// operator `{operator}` requires {expected} operand at position {pos}
     OperandMissed { operator: Operator, pos: u8, expected: &'static str },
 
@@ -86,6 +89,10 @@ pub enum Error {
 
     /// program data exceeds maximum length
     DataLengthOverflow,
+
+    /// list of external libraries does not fit into the maximum library segment length
+    #[from(LibSegOverflow)]
+    LibsLengthOverflow,
 
     /// integer literal for `{0}` must has value smaller than 32768
     StepTooLarge(Operator),
@@ -121,7 +128,9 @@ impl Issue for Error {
             },
             Error::CodeLengthOverflow => 25,
             Error::DataLengthOverflow => 26,
-            Error::StepTooLarge(_) => 27,
+            Error::LibsLengthOverflow => 27,
+            Error::StepTooLarge(_) => 28,
+            Error::OperandRegMutBeEqual(_) => 29,
         }
     }
 

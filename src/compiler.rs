@@ -9,10 +9,10 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use aluvm::data::Step;
-use aluvm::isa::{ArithmeticOp, Bytecode, CmpOp, Flag, Instr, IntFlags, ParseFlagError};
+use aluvm::data::{ByteStr, Step};
+use aluvm::isa::{ArithmeticOp, BitwiseOp, Bytecode, Flag, Instr, ParseFlagError};
 use aluvm::libs::{Cursor, LibSeg};
-use aluvm::reg::{Reg32, RegAF, RegAll, Register};
+use aluvm::reg::{Reg32, RegAF, RegAR, RegAll, Register};
 use amplify::num::u1024;
 use pest::Span;
 
@@ -24,11 +24,13 @@ pub mod obj {
 
     use crate::Issues;
 
+    #[derive(Clone, Hash, Debug)]
     pub struct Program<'i> {
         pub routines: BTreeMap<String, Routine>,
         pub issues: Issues<'i>,
     }
 
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     pub struct Routine {
         pub bytecode: Vec<u8>,
         /// Maps instruction positions withing the bytecode
@@ -37,8 +39,8 @@ pub mod obj {
 }
 
 impl<'i> ast::Program<'i> {
-    pub fn compile(&self) -> obj::Program {
-        let mut issues = self.issues.clone();
+    pub fn compile(&'i self) -> obj::Program {
+        let mut issues = Issues::default();
         let routines = self
             .code
             .iter()
@@ -49,25 +51,42 @@ impl<'i> ast::Program<'i> {
 }
 
 impl<'i> ast::Routine<'i> {
-    pub fn compile(&self, issues: &mut Issues<'i>) -> obj::Routine {
-        let mut bytecode = Vec::with_capacity(self.code.len() * 3);
+    pub fn compile(&'i self, issues: &mut Issues<'i>) -> obj::Routine {
+        let mut instructions = Vec::with_capacity(self.code.len());
         let mut map = Vec::with_capacity(self.code.len());
-        let libs = LibSeg::default();
-        let mut writer = Cursor::new(&mut bytecode, &libs);
-        for (index, line) in self.code.iter().enumerate() {
-            map[index] = writer.pos();
-            let instr = line.compile(issues);
+        for line in self.code.iter() {
+            instructions.push(line.compile(issues));
+        }
+        if issues.has_errors() {
+            return obj::Routine { bytecode: vec![], map };
+        }
+
+        let call_sites = instructions.iter().filter_map(|instr| instr.call_site());
+        let libs_segment = LibSeg::from(call_sites)
+            .map_err(|err| issues.push_error(err.into(), self.span.clone()))
+            .unwrap_or_default();
+        let mut code_segment = ByteStr::default();
+        let mut writer = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
+
+        for (instr, line) in instructions.iter().zip(self.code.iter()) {
+            map.push(writer.pos());
             if let Err(err) = instr.write(&mut writer) {
                 issues.push_error(err.into(), line.span.clone());
-                return obj::Routine { bytecode, map };
+                let pos = writer.pos();
+                let data = writer.into_data_segment();
+                code_segment.adjust_len(pos, false);
+                return obj::Routine { bytecode: code_segment.to_vec(), map };
             }
         }
-        obj::Routine { bytecode, map }
+        let pos = writer.pos();
+        let data = writer.into_data_segment();
+        code_segment.adjust_len(pos, false);
+        obj::Routine { bytecode: code_segment.to_vec(), map }
     }
 }
 
 impl<'i> ast::Instruction<'i> {
-    fn reg<T>(&self, no: u8, issues: &mut Issues<'i>) -> T
+    fn reg<T>(&'i self, no: u8, issues: &mut Issues<'i>) -> T
     where
         T: TryFrom<RegAll> + Register,
     {
@@ -83,7 +102,7 @@ impl<'i> ast::Instruction<'i> {
                     issues.push_error(
                         Error::OperandWrongType {
                             operator: self.operator.0,
-                            pos: no,
+                            pos: no + 1,
                             expected: T::description(),
                         },
                         span.clone(),
@@ -95,7 +114,7 @@ impl<'i> ast::Instruction<'i> {
                 issues.push_error(
                     Error::OperandMissed {
                         operator: self.operator.0,
-                        pos: no,
+                        pos: no + 1,
                         expected: T::description(),
                     },
                     self.span.clone(),
@@ -106,7 +125,7 @@ impl<'i> ast::Instruction<'i> {
             issues.push_error(
                 Error::OperandWrongReg {
                     operator: self.operator.0,
-                    pos: no,
+                    pos: no + 1,
                     expected: T::description(),
                 },
                 span,
@@ -115,7 +134,7 @@ impl<'i> ast::Instruction<'i> {
         })
     }
 
-    fn idx<T>(&self, no: u8, issues: &mut Issues<'i>) -> T
+    fn idx<T>(&'i self, no: u8, issues: &mut Issues<'i>) -> T
     where
         T: TryFrom<Reg32> + Register,
     {
@@ -131,7 +150,7 @@ impl<'i> ast::Instruction<'i> {
                     issues.push_error(
                         Error::OperandWrongType {
                             operator: self.operator.0,
-                            pos: no,
+                            pos: no + 1,
                             expected: T::description(),
                         },
                         span.clone(),
@@ -143,18 +162,18 @@ impl<'i> ast::Instruction<'i> {
                 issues.push_error(
                     Error::OperandMissed {
                         operator: self.operator.0,
-                        pos: no,
+                        pos: no + 1,
                         expected: T::description(),
                     },
-                    self.span.clone(),
+                    self.operator.1.clone(),
                 );
-                (Reg32::default(), self.span.clone())
+                (Reg32::default(), self.operator.1.clone())
             });
         operand.try_into().unwrap_or_else(|_| {
             issues.push_error(
                 Error::OperandWrongReg {
                     operator: self.operator.0,
-                    pos: no,
+                    pos: no + 1,
                     expected: T::description(),
                 },
                 span,
@@ -163,7 +182,7 @@ impl<'i> ast::Instruction<'i> {
         })
     }
 
-    fn flags<F>(&self, issues: &mut Issues<'i>) -> F
+    fn flags<F>(&'i self, issues: &mut Issues<'i>) -> F
     where
         WrappedFlag<F>: TryFrom<FlagSet<'i, char>, Error = FlagError<'i>>,
         F: Flag,
@@ -176,7 +195,7 @@ impl<'i> ast::Instruction<'i> {
             .unwrap_or_default()
     }
 
-    pub fn compile(&self, issues: &mut Issues<'i>) -> Instr {
+    pub fn compile(&'i self, issues: &mut Issues<'i>) -> Instr {
         macro_rules! reg {
             ($no:literal) => {
                 self.reg($no, issues)
@@ -193,12 +212,13 @@ impl<'i> ast::Instruction<'i> {
             };
         }
         match self.operator.0 {
-            Operator::neg => Instr::Arithmetic(ArithmeticOp::Neg(reg! {0}, idx! {1})),
+            // *** Arithmetic
+            Operator::neg => Instr::Arithmetic(ArithmeticOp::Neg(reg! {0}, idx! {0})),
             Operator::inc => {
-                Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {1}, Step::with(1)))
+                Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {0}, Step::with(1)))
             }
             Operator::dec => {
-                Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {1}, Step::with(-1)))
+                Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {0}, Step::with(-1)))
             }
             Operator::add => {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
@@ -207,17 +227,24 @@ impl<'i> ast::Instruction<'i> {
                         issues.push_error(Error::StepTooLarge(self.operator.0), span.clone());
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
-                        reg! {0},
+                        reg! {1},
                         idx! {1},
                         Step::with(step.low_u32() as i16),
                     ))
                 } else {
-                    match reg! {0} {
+                    let reg = reg! {0};
+                    if reg != reg! {1} {
+                        issues.push_error(
+                            Error::OperandRegMutBeEqual(self.operator.0),
+                            self.operands[2].as_span().clone(),
+                        );
+                    }
+                    match reg {
                         RegAF::A(a) => {
-                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {1}, idx! {2}))
+                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {0}, idx! {1}))
                         }
                         RegAF::F(f) => {
-                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {1}, idx! {2}))
+                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {0}, idx! {1}))
                         }
                     }
                 }
@@ -229,47 +256,135 @@ impl<'i> ast::Instruction<'i> {
                         issues.push_error(Error::StepTooLarge(self.operator.0), span.clone());
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
-                        reg! {0},
+                        reg! {1},
                         idx! {1},
                         Step::with(-(step.low_u32() as i16)),
                     ))
                 } else {
-                    match reg! {0} {
+                    let reg = reg! {0};
+                    if reg != reg! {1} {
+                        issues.push_error(
+                            Error::OperandRegMutBeEqual(self.operator.0),
+                            self.operands[2].as_span().clone(),
+                        );
+                    }
+                    match reg {
                         RegAF::A(a) => {
-                            Instr::Arithmetic(ArithmeticOp::SubA(flags!(), a, idx! {1}, idx! {2}))
+                            Instr::Arithmetic(ArithmeticOp::SubA(flags!(), a, idx! {0}, idx! {1}))
                         }
                         RegAF::F(f) => {
-                            Instr::Arithmetic(ArithmeticOp::SubF(flags!(), f, idx! {1}, idx! {2}))
+                            Instr::Arithmetic(ArithmeticOp::SubF(flags!(), f, idx! {0}, idx! {1}))
                         }
                     }
                 }
             }
-            Operator::mul => match reg! {0} {
-                RegAF::A(a) => {
-                    Instr::Arithmetic(ArithmeticOp::MulA(flags!(), a, idx! {1}, idx! {2}))
+            Operator::mul => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
                 }
-                RegAF::F(f) => {
-                    Instr::Arithmetic(ArithmeticOp::MulF(flags!(), f, idx! {1}, idx! {2}))
+                match reg {
+                    RegAF::A(a) => {
+                        Instr::Arithmetic(ArithmeticOp::MulA(flags!(), a, idx! {0}, idx! {1}))
+                    }
+                    RegAF::F(f) => {
+                        Instr::Arithmetic(ArithmeticOp::MulF(flags!(), f, idx! {0}, idx! {1}))
+                    }
                 }
-            },
-            Operator::div => match reg! {0} {
-                RegAF::A(a) => {
-                    Instr::Arithmetic(ArithmeticOp::DivA(flags!(), a, idx! {1}, idx! {2}))
-                }
-                RegAF::F(f) => {
-                    Instr::Arithmetic(ArithmeticOp::DivF(flags!(), f, idx! {1}, idx! {2}))
-                }
-            },
-            Operator::rem => {
-                Instr::Arithmetic(ArithmeticOp::Rem(reg! {0}, idx! {1}, reg! {2}, idx! {3}))
             }
-            Operator::abs => Instr::Arithmetic(ArithmeticOp::Abs(reg! {0}, idx! {1})),
+            Operator::div => {
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                match reg {
+                    RegAF::A(a) => {
+                        Instr::Arithmetic(ArithmeticOp::DivA(flags!(), a, idx! {0}, idx! {1}))
+                    }
+                    RegAF::F(f) => {
+                        Instr::Arithmetic(ArithmeticOp::DivF(flags!(), f, idx! {0}, idx! {1}))
+                    }
+                }
+            }
+            Operator::rem => {
+                Instr::Arithmetic(ArithmeticOp::Rem(reg! {0}, idx! {0}, reg! {1}, idx! {1}))
+            }
+            Operator::abs => Instr::Arithmetic(ArithmeticOp::Abs(reg! {0}, idx! {0})),
+
+            // *** Bitwise
+            Operator::not => Instr::Bitwise(BitwiseOp::Not(reg! {0}, idx! {0})),
+            Operator::and => {
+                let reg: RegAR = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span().clone(),
+                    );
+                }
+                if reg != reg! {2} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                Instr::Bitwise(BitwiseOp::And(reg, idx! {0}, idx! {1}, idx! {2}))
+            }
+            Operator::or => {
+                let reg: RegAR = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span().clone(),
+                    );
+                }
+                if reg != reg! {2} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                Instr::Bitwise(BitwiseOp::Or(reg, idx! {0}, idx! {1}, idx! {2}))
+            }
+            Operator::xor => {
+                let reg: RegAR = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span().clone(),
+                    );
+                }
+                if reg != reg! {2} {
+                    issues.push_error(
+                        Error::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span().clone(),
+                    );
+                }
+                Instr::Bitwise(BitwiseOp::Xor(reg, idx! {0}, idx! {1}, idx! {2}))
+            }
+            Operator::shl => Instr::Bitwise(BitwiseOp::Shl(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
+            Operator::shr => match reg! {1} {
+                RegAR::A(a) => {
+                    Instr::Bitwise(BitwiseOp::ShrA(flags!(), reg! {0}, idx! {0}, a, idx! {1}))
+                }
+                RegAR::R(r) => Instr::Bitwise(BitwiseOp::ShrR(reg! {0}, idx! {0}, r, idx! {1})),
+            },
+            Operator::scl => Instr::Bitwise(BitwiseOp::Scl(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
+            Operator::scr => Instr::Bitwise(BitwiseOp::Scr(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
+            Operator::rev => match reg! {0} {
+                RegAR::A(a) => Instr::Bitwise(BitwiseOp::RevA(a, idx! {0})),
+                RegAR::R(r) => Instr::Bitwise(BitwiseOp::RevR(r, idx! {0})),
+            },
 
             Operator::nop => Instr::Nop,
 
-            _ => panic!(),
+            _ => Instr::Nop,
             /*
-            Operator::and => {}
             Operator::call => {}
             Operator::clr => {}
             Operator::cnv => {}
@@ -292,22 +407,16 @@ impl<'i> ast::Instruction<'i> {
             Operator::putif => {}
             Operator::read => {}
             Operator::ret => {}
-            Operator::rev => {}
             Operator::ripemd => {}
-            Operator::scl => {}
-            Operator::scr => {}
             Operator::secpadd => {}
             Operator::secpgen => {}
             Operator::secpmul => {}
             Operator::secpneg => {}
             Operator::sha2 => {}
-            Operator::shl => {}
-            Operator::shr => {}
             Operator::spy => {}
             Operator::st => Instr::Cmp(CmpOp::St()),
             Operator::succ => {}
             Operator::swp => {}
-            Operator::xor => {}
              */
         }
     }
