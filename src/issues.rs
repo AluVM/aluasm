@@ -96,6 +96,12 @@ pub enum Error {
 
     /// integer literal for `{0}` must has value smaller than 32768
     StepTooLarge(Operator),
+
+    /// unknown constant name `{0}`; consider adding constant to .CONST segment
+    ConstUnknown(String),
+
+    /// constant `{name}` is {found}, while {expected} is required in this position
+    ConstWrongType { name: String, expected: &'static str, found: &'static str },
 }
 
 impl Issue for Error {
@@ -131,6 +137,8 @@ impl Issue for Error {
             Error::LibsLengthOverflow => 27,
             Error::StepTooLarge(_) => 28,
             Error::OperandRegMutBeEqual(_) => 29,
+            Error::ConstUnknown(_) => 30,
+            Error::ConstWrongType { .. } => 31,
         }
     }
 

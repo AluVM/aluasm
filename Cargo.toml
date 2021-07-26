@@ -16,6 +16,7 @@ exclude = [".github"]
 amplify = "3.7"
 aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm", features = ["std"] }
 # alure = { version = "0.1", path = "../alure" }
+rustc_apfloat = "0.1.3"
 pest = "2.1"
 pest_derive = "2.1"
 clap = "3.0.0-beta.2"

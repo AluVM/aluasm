@@ -99,6 +99,16 @@ impl<'i> Operand<'i> {
             | Operand::Const(_, span) => span,
         }
     }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Operand::Reg { .. } => "register",
+            Operand::Goto(_, _) => "goto statement",
+            Operand::Call(_, _) => "call statement",
+            Operand::Lit(lit, _) => lit.description(),
+            Operand::Const(_, _) => "constant value",
+        }
+    }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
@@ -126,6 +136,17 @@ pub enum Literal {
     Float(u128, u128, u16),
     String(String),
     Char(u8),
+}
+
+impl Literal {
+    pub fn description(&self) -> &'static str {
+        match self {
+            Literal::Int(_, _) => "integer literal",
+            Literal::Float(_, _, _) => "float literal",
+            Literal::String(_) => "string literal",
+            Literal::Char(_) => "char literal",
+        }
+    }
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]

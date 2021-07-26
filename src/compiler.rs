@@ -7,14 +7,17 @@
 
 //! Compiler converting AST constructed by analyzer into instructions and library data structure
 
+use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
+use std::str::FromStr;
 
-use aluvm::data::{ByteStr, Step};
-use aluvm::isa::{ArithmeticOp, BitwiseOp, Bytecode, Flag, Instr, MoveOp, ParseFlagError};
+use aluvm::data::{ByteStr, MaybeNumber, Step};
+use aluvm::isa::{ArithmeticOp, BitwiseOp, Bytecode, Flag, Instr, MoveOp, ParseFlagError, PutOp};
 use aluvm::libs::{Cursor, LibSeg};
-use aluvm::reg::{Reg32, RegAF, RegAFR, RegAR, RegAll, Register};
+use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, Register};
 use amplify::num::u1024;
 use pest::Span;
+use rustc_apfloat::ieee;
 
 use crate::ast::{self, FlagSet, Literal, Operand, Operator};
 use crate::{Error, Issues};
@@ -44,18 +47,18 @@ impl<'i> ast::Program<'i> {
         let routines = self
             .code
             .iter()
-            .map(|(name, routine)| (name.clone(), routine.compile(&mut issues)))
+            .map(|(name, routine)| (name.clone(), routine.compile(self, &mut issues)))
             .collect();
         obj::Program { routines, issues }
     }
 }
 
 impl<'i> ast::Routine<'i> {
-    pub fn compile(&'i self, issues: &mut Issues<'i>) -> obj::Routine {
+    pub fn compile(&'i self, program: &'i ast::Program, issues: &mut Issues<'i>) -> obj::Routine {
         let mut instructions = Vec::with_capacity(self.code.len());
         let mut map = Vec::with_capacity(self.code.len());
         for line in self.code.iter() {
-            instructions.push(line.compile(issues));
+            instructions.push(line.compile(program, issues));
         }
         if issues.has_errors() {
             return obj::Routine { bytecode: vec![], map };
@@ -195,7 +198,76 @@ impl<'i> ast::Instruction<'i> {
             .unwrap_or_default()
     }
 
-    pub fn compile(&'i self, issues: &mut Issues<'i>) -> Instr {
+    fn val(
+        &'i self,
+        no: u8,
+        reg: impl NumericRegister,
+        consts: &'i BTreeMap<String, ast::Const<'i>>,
+        issues: &mut Issues<'i>,
+    ) -> MaybeNumber {
+        let operand = if let Some(operand) = self.operands.get(no as usize) {
+            operand
+        } else {
+            issues.push_error(
+                Error::OperandMissed {
+                    operator: self.operator.0,
+                    pos: no + 1,
+                    expected: "constant or integer literal",
+                },
+                self.operator.1.clone(),
+            );
+            return MaybeNumber::none();
+        };
+
+        let mut val = match operand {
+            Operand::Lit(Literal::Int(val, _), _) => MaybeNumber::from(val),
+            Operand::Lit(Literal::Float(i, r, e), _) => MaybeNumber::from(
+                ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e)).expect("internal error I0003"),
+            ),
+            Operand::Const(name, span) => {
+                let val = match consts.get(name) {
+                    Some(val) => val,
+                    None => {
+                        issues.push_error(Error::ConstUnknown(name.clone()), span.clone());
+                        return MaybeNumber::none();
+                    }
+                };
+                match &val.value {
+                    Literal::Int(val, _) => MaybeNumber::from(val),
+                    Literal::Float(i, r, e) => MaybeNumber::from(
+                        ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e))
+                            .expect("internal error I0004"),
+                    ),
+                    lit => {
+                        issues.push_error(
+                            Error::ConstWrongType {
+                                name: name.clone(),
+                                expected: "integer or float",
+                                found: lit.description(),
+                            },
+                            span.clone(),
+                        );
+                        return MaybeNumber::none();
+                    }
+                }
+            }
+            op => {
+                issues.push_error(
+                    Error::OperandWrongType {
+                        operator: self.operator.0,
+                        pos: no + 1,
+                        expected: op.description(),
+                    },
+                    op.as_span().clone(),
+                );
+                return MaybeNumber::none();
+            }
+        };
+        val.reshape(reg.layout());
+        val
+    }
+
+    pub fn compile(&'i self, program: &'i ast::Program, issues: &mut Issues<'i>) -> Instr {
         macro_rules! reg {
             ($no:literal) => {
                 self.reg($no, issues)
@@ -206,12 +278,33 @@ impl<'i> ast::Instruction<'i> {
                 self.idx($no, issues)
             };
         }
+        macro_rules! val {
+            ($no:literal, $reg:ident) => {
+                Box::new(self.val($no, $reg, &program.r#const, issues))
+            };
+        }
         macro_rules! flags {
             () => {
                 self.flags(issues)
             };
         }
         match self.operator.0 {
+            // *** Put operations
+            Operator::clr => match reg! {0} {
+                RegAFR::A(a) => Instr::Put(PutOp::ClrA(a, idx! {0})),
+                RegAFR::F(f) => Instr::Put(PutOp::ClrF(f, idx! {0})),
+                RegAFR::R(r) => Instr::Put(PutOp::ClrR(r, idx! {0})),
+            },
+            Operator::put => match reg! {1} {
+                RegAFR::A(a) => Instr::Put(PutOp::PutA(a, idx! {1}, val! {0, a})),
+                RegAFR::F(f) => Instr::Put(PutOp::PutF(f, idx! {1}, val! {0, f})),
+                RegAFR::R(r) => Instr::Put(PutOp::PutR(r, idx! {1}, val! {0, r})),
+            },
+            Operator::putif => match reg! {1} {
+                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, val! {0, a})),
+                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {1}, val! {0, r})),
+            },
+
             // *** Move operations
             Operator::dup => {
                 let reg = reg! {0};
@@ -444,7 +537,6 @@ impl<'i> ast::Instruction<'i> {
             _ => Instr::Nop,
             /*
             Operator::call => {}
-            Operator::clr => {}
             Operator::eq => {}
             Operator::extr => {}
             Operator::fail => {}
@@ -457,8 +549,6 @@ impl<'i> ast::Instruction<'i> {
             Operator::jmp => {}
             Operator::le => {}
             Operator::lt => {}
-            Operator::put => {}
-            Operator::putif => {}
             Operator::read => {}
             Operator::ret => {}
             Operator::ripemd => {}
