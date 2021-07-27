@@ -49,7 +49,7 @@ fn main() {
     let args = Args::parse();
 
     for file in args.files {
-        let mut fd = File::open(file).expect("wrong file");
+        let mut fd = File::open(&file).expect("wrong file");
 
         let mut s = String::new();
         fd.read_to_string(&mut s).expect("reading file");
@@ -61,6 +61,11 @@ fn main() {
             let (module, issues) = program.compile();
             eprintln!("{}", issues);
             if !issues.has_errors() {
+                let mut dest = file.clone();
+                dest.set_extension("ao");
+                let mut fd = File::create(dest).expect("creating module file");
+                module.write(&mut fd).expect("writing module output");
+
                 println!("{:?}", module);
                 let lib: Lib<ReservedOp> =
                     Lib::with(&module.isae, module.code, module.data, module.libs)

@@ -29,9 +29,11 @@ use crate::{Error, Issues};
 
 pub mod obj {
     use std::collections::BTreeMap;
+    use std::io::{self, Write};
 
     use aluvm::data::{FloatLayout, IntLayout, MaybeNumber};
     use aluvm::libs::LibSeg;
+    use amplify::Wrapper;
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
     pub struct Symbols {
@@ -63,6 +65,37 @@ pub mod obj {
         pub libs: LibSeg,
         pub input: Vec<Input>,
         pub symbols: Symbols,
+    }
+
+    impl Module {
+        pub fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+            writer.write(self.isae.as_bytes())?;
+            writer.write(&[0u8])?;
+            writer.write(&(self.code.len() as u16).to_le_bytes())?;
+            writer.write(&self.code)?;
+            writer.write(&(self.data.len() as u16).to_le_bytes())?;
+            writer.write(&self.data)?;
+            writer.write(&[self.libs.into_iter().count() as u8])?;
+            for id in &self.libs {
+                writer.write(id.as_inner())?;
+            }
+            // TODO: Control that the number of routines does not exceeds u16::MAX
+            writer.write(&(self.symbols.routines.len() as u16).to_le_bytes())?;
+            for (name, offset) in &self.symbols.routines {
+                // TODO: Control length of routine names
+                writer.write(&[name.len() as u8])?;
+                writer.write(name.as_bytes())?;
+                writer.write(&offset.to_le_bytes())?;
+            }
+            // TODO: Control that the number of external symbols does not exceeds u16::MAX
+            writer.write(&(self.symbols.externals.len() as u16).to_le_bytes())?;
+            for name in &self.symbols.externals {
+                // TODO: Control length of external calls
+                writer.write(&[name.len() as u8])?;
+                writer.write(name.as_bytes())?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -180,6 +213,17 @@ impl<'i> ast::Program<'i> {
 
         // TODO: Collect inputs
         let input = vec![];
+        /*
+        let input = self.input.values().map(|v| {
+            obj::Input {
+                name: v.name.clone(),
+                details: v.info.clone(),
+                data: match v {
+
+                }
+            }
+        }).collect();
+         */
 
         let routines = routine_map
             .iter()
