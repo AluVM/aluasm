@@ -20,15 +20,21 @@ use pest::Span;
 
 use crate::Issues;
 
-#[derive(Clone, Hash, Default, Debug)]
+#[derive(Clone, Hash, Debug)]
 pub struct Program<'i> {
     pub isae: BTreeSet<Isa>,
-    pub libs: BTreeMap<String, LibId>,
+    pub libs: Libs<'i>,
     pub main: Option<Routine<'i>>,
     pub code: BTreeMap<String, Routine<'i>>,
     pub r#const: BTreeMap<String, Const<'i>>,
     pub input: BTreeMap<String, Var<'i>>,
     pub issues: Issues<'i>,
+}
+
+#[derive(Clone, Hash, Debug)]
+pub struct Libs<'i> {
+    pub map: BTreeMap<String, LibId>,
+    pub span: Span<'i>,
 }
 
 #[derive(Clone, Hash, Debug)]
@@ -84,7 +90,7 @@ pub struct KeyedFlag<'i> {
 pub enum Operand<'i> {
     Reg { set: RegAll, index: Reg32, span: Span<'i> },
     Goto(Goto, Span<'i>),
-    Call(String, Span<'i>),
+    Call { lib: String, routine: String, span: Span<'i> },
     Lit(Literal, Span<'i>),
     Const(String, Span<'i>),
 }
@@ -94,7 +100,7 @@ impl<'i> Operand<'i> {
         match self {
             Operand::Reg { span, .. }
             | Operand::Goto(_, span)
-            | Operand::Call(_, span)
+            | Operand::Call { span, .. }
             | Operand::Lit(_, span)
             | Operand::Const(_, span) => span,
         }
@@ -104,7 +110,7 @@ impl<'i> Operand<'i> {
         match self {
             Operand::Reg { .. } => "register",
             Operand::Goto(_, _) => "goto statement",
-            Operand::Call(_, _) => "call statement",
+            Operand::Call { .. } => "call statement",
             Operand::Lit(lit, _) => lit.description(),
             Operand::Const(_, _) => "constant value",
         }

@@ -16,7 +16,7 @@ use aluvm::isa::{
     ArithmeticOp, BitwiseOp, Bytecode, CmpOp, ControlFlowOp, DigestOp, Flag, Instr, MoveOp,
     ParseFlagError, PutOp, Secp256k1Op,
 };
-use aluvm::libs::{Cursor, LibSeg, LibSite};
+use aluvm::libs::{Cursor, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
 use amplify::num::u1024;
 use pest::Span;
@@ -28,66 +28,147 @@ use crate::{Error, Issues};
 pub mod obj {
     use std::collections::BTreeMap;
 
-    use crate::Issues;
+    use aluvm::data::{FloatLayout, IntLayout, MaybeNumber};
+    use aluvm::libs::LibSeg;
 
-    #[derive(Clone, Hash, Debug)]
-    pub struct Program<'i> {
-        pub routines: BTreeMap<String, Routine>,
-        pub issues: Issues<'i>,
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
+    pub struct Symbols {
+        /// External routine names
+        pub externals: Vec<String>,
+        /// Map of local routine names to code offsets
+        pub routines: BTreeMap<String, u16>,
     }
 
-    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-    pub struct Routine {
-        pub bytecode: Vec<u8>,
-        /// Maps instruction positions withing the bytecode
-        pub map: Vec<u16>,
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+    pub enum DataType {
+        String(String),
+        Int(IntLayout, MaybeNumber),
+        Float(FloatLayout, MaybeNumber),
+    }
+
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+    pub struct Input {
+        pub name: String,
+        pub details: String,
+        pub data: DataType,
+    }
+
+    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
+    pub struct Module {
+        pub code: Vec<u8>,
+        pub data: Vec<u8>,
+        pub libs: LibSeg,
+        pub input: Vec<Input>,
+        pub symbols: Symbols,
+    }
+}
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
+#[display(doc_comments)]
+pub enum LibError {
+    /// library `{0}` containing routine `{1}` is not found
+    LibNotFound(LibId, String),
+
+    /// number of external routine calls exceeds maximal number of jumps allowed by VM's `cy0`
+    TooManyRoutines,
+}
+
+pub struct LibFrame<'a, 'b> {
+    seg: &'a LibSeg,
+    sym: &'b mut Vec<String>,
+}
+
+impl<'a, 'b> LibFrame<'a, 'b> {
+    #[inline]
+    pub fn with(seg: &'a LibSeg, sym: &'b mut Vec<String>) -> Self { LibFrame { seg, sym } }
+
+    pub fn find_or_insert_ext(
+        &mut self,
+        id: LibId,
+        routine: &String,
+    ) -> Result<(u8, u16), LibError> {
+        let LibFrame { seg: libs, sym: routines } = self;
+        let pos1 = libs.index(id).ok_or(LibError::LibNotFound(id, routine.clone()))?;
+        if routines.len() >= u16::MAX as usize {
+            return Err(LibError::TooManyRoutines);
+        }
+        let pos2 = routines.iter().position(|name| name == routine).unwrap_or_else(|| {
+            routines.push(routine.clone());
+            routines.len() - 1
+        });
+        Ok((pos1, pos2 as u16))
     }
 }
 
 impl<'i> ast::Program<'i> {
-    pub fn compile(&'i self) -> obj::Program {
+    pub fn compile(&'i self) -> (obj::Module, Issues<'i>) {
         let mut issues = Issues::default();
+
+        let mut libs_segment = LibSeg::default();
+        self.libs.map.values().any(|id| {
+            libs_segment
+                .add_lib(*id)
+                .map_err(|err| issues.push_error(err.into(), self.libs.span.clone()))
+                .is_err()
+        });
+        let mut code_segment = ByteStr::default();
+        let mut writer = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
+
+        let mut externals = vec![];
+        let mut frame = LibFrame::with(&libs_segment, &mut externals);
         let routines = self
             .code
             .iter()
-            .map(|(name, routine)| (name.clone(), routine.compile(self, &mut issues)))
+            .filter_map(|(name, routine)| {
+                Some((name.clone(), routine.compile(&mut writer, self, &mut frame, &mut issues)?))
+            })
             .collect();
-        obj::Program { routines, issues }
+
+        let pos = writer.pos();
+        let data = writer.into_data_segment();
+        match pos {
+            Some(pos) => code_segment.adjust_len(pos, false),
+            None => code_segment.adjust_len(u16::MAX, true),
+        }
+
+        // TODO: Collect inputs
+        let input = vec![];
+
+        let symbols = obj::Symbols { externals, routines };
+
+        (
+            obj::Module { code: code_segment.to_vec(), data, libs: libs_segment, input, symbols },
+            issues,
+        )
     }
 }
 
 impl<'i> ast::Routine<'i> {
-    pub fn compile(&'i self, program: &'i ast::Program, issues: &mut Issues<'i>) -> obj::Routine {
-        let mut instructions = Vec::with_capacity(self.code.len());
+    pub fn compile(
+        &'i self,
+        writer: &mut (impl Read + Write),
+        program: &'i ast::Program,
+        frame: &mut LibFrame,
+        issues: &mut Issues<'i>,
+    ) -> Option<u16> {
         let mut map = Vec::with_capacity(self.code.len());
-        for line in self.code.iter() {
-            instructions.push(line.compile(program, issues));
-        }
+
         if issues.has_errors() {
-            return obj::Routine { bytecode: vec![], map };
+            return writer.pos();
         }
 
-        let call_sites = instructions.iter().filter_map(|instr| instr.call_site());
-        let libs_segment = LibSeg::from(call_sites)
-            .map_err(|err| issues.push_error(err.into(), self.span.clone()))
-            .unwrap_or_default();
-        let mut code_segment = ByteStr::default();
-        let mut writer = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
-
-        for (instr, line) in instructions.iter().zip(self.code.iter()) {
+        for line in &self.code {
             map.push(writer.pos());
-            if let Err(err) = instr.write(&mut writer) {
+            let instr = line.compile(program, frame, issues);
+            if let Err(err) = instr.write(writer) {
                 issues.push_error(err.into(), line.span.clone());
-                let pos = writer.pos();
-                let data = writer.into_data_segment();
-                code_segment.adjust_len(pos, false);
-                return obj::Routine { bytecode: code_segment.to_vec(), map };
+                break;
             }
         }
-        let pos = writer.pos();
-        let data = writer.into_data_segment();
-        code_segment.adjust_len(pos, false);
-        obj::Routine { bytecode: code_segment.to_vec(), map }
+
+        // TODO: Replace jumps
+
+        map.get(0).copied().unwrap_or_else(|| writer.pos())
     }
 }
 
@@ -104,7 +185,7 @@ impl<'i> ast::Instruction<'i> {
                 Operand::Goto(_, span)
                 | Operand::Const(_, span)
                 | Operand::Lit(_, span)
-                | Operand::Call(_, span) => {
+                | Operand::Call { span, .. } => {
                     issues.push_error(
                         Error::OperandWrongType {
                             operator: self.operator.0,
@@ -152,7 +233,7 @@ impl<'i> ast::Instruction<'i> {
                 Operand::Goto(_, span)
                 | Operand::Const(_, span)
                 | Operand::Lit(_, span)
-                | Operand::Call(_, span) => {
+                | Operand::Call { span, .. } => {
                     issues.push_error(
                         Error::OperandWrongType {
                             operator: self.operator.0,
@@ -270,7 +351,61 @@ impl<'i> ast::Instruction<'i> {
         val
     }
 
-    pub fn compile(&'i self, program: &'i ast::Program, issues: &mut Issues<'i>) -> Instr {
+    fn lib(
+        &'i self,
+        no: u8,
+        program: &'i ast::Program,
+        frame: &mut LibFrame,
+        issues: &mut Issues<'i>,
+    ) -> LibSite {
+        let operand = if let Some(operand) = self.operands.get(no as usize) {
+            operand
+        } else {
+            issues.push_error(
+                Error::OperandMissed {
+                    operator: self.operator.0,
+                    pos: no + 1,
+                    expected: "external call statement",
+                },
+                self.operator.1.clone(),
+            );
+            return LibSite::default();
+        };
+
+        match operand {
+            Operand::Call { lib, routine, span } => {
+                let id = program.libs.map.get(lib).copied().unwrap_or_else(|| {
+                    issues.push_error(Error::LibUnknown(lib.clone()), span.clone());
+                    LibId::default()
+                });
+                match frame.find_or_insert_ext(id, routine) {
+                    Ok((_, pos)) => return LibSite::with(pos, id),
+                    Err(err) => {
+                        issues.push_error(err.into(), span.clone());
+                        return LibSite::default();
+                    }
+                }
+            }
+            op => {
+                issues.push_error(
+                    Error::OperandWrongType {
+                        operator: self.operator.0,
+                        pos: no + 1,
+                        expected: op.description(),
+                    },
+                    op.as_span().clone(),
+                );
+                return LibSite::default();
+            }
+        }
+    }
+
+    pub fn compile(
+        &'i self,
+        program: &'i ast::Program,
+        frame: &mut LibFrame,
+        issues: &mut Issues<'i>,
+    ) -> Instr {
         macro_rules! reg {
             ($no:expr) => {
                 self.reg($no, issues)
@@ -284,6 +419,11 @@ impl<'i> ast::Instruction<'i> {
         macro_rules! val {
             ($no:expr, $reg:ident) => {
                 Box::new(self.val($no, $reg, &program.r#const, issues))
+            };
+        }
+        macro_rules! lib {
+            ($no:expr) => {
+                self.lib($no, program, frame, issues)
             };
         }
         macro_rules! flags {
@@ -300,8 +440,8 @@ impl<'i> ast::Instruction<'i> {
             Operator::jif => Instr::ControlFlow(ControlFlowOp::Jif(0)),
             Operator::jmp => Instr::ControlFlow(ControlFlowOp::Jmp(0)),
             Operator::routine => Instr::ControlFlow(ControlFlowOp::Routine(0)),
-            Operator::exec => Instr::ControlFlow(ControlFlowOp::Exec(LibSite::default())),
-            Operator::call => Instr::ControlFlow(ControlFlowOp::Call(LibSite::default())),
+            Operator::exec => Instr::ControlFlow(ControlFlowOp::Exec(lib! {0})),
+            Operator::call => Instr::ControlFlow(ControlFlowOp::Call(lib! {0})),
 
             // *** Put operations
             Operator::clr => match reg! {0} {

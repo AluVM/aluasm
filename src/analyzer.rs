@@ -20,14 +20,22 @@ use amplify::num::{u1024, u5};
 use pest::iterators::Pair;
 
 use crate::ast::{
-    Const, FlagSet, Goto, Instruction, IntBase, Literal, Offset, Operand, Operator, Program,
+    Const, FlagSet, Goto, Instruction, IntBase, Libs, Literal, Offset, Operand, Operator, Program,
     Routine, Var,
 };
 use crate::{Error, Issues, Rule, Warning};
 
 impl<'i> Program<'i> {
     pub fn analyze(pair: Pair<'i, Rule>) -> Self {
-        let mut program = Program::default();
+        let mut program = Program {
+            isae: Default::default(),
+            libs: Libs { map: bmap! {}, span: pair.as_span() },
+            main: None,
+            code: Default::default(),
+            r#const: Default::default(),
+            input: Default::default(),
+            issues: Default::default(),
+        };
         for pair in pair.into_inner() {
             match pair.as_rule() {
                 Rule::isae => program.analyze_isae(pair),
@@ -77,18 +85,19 @@ impl<'i> Program<'i> {
     }
 
     fn analyze_libs(&mut self, pair: Pair<'i, Rule>) {
-        let mut libs = bmap! {};
+        let span = pair.as_span();
+        let mut map = bmap! {};
         for pair in pair.into_inner() {
             let mut iter = pair.into_inner();
             let name = iter.next().expect("lexer error: library statement must start with name");
             let id = iter.next().expect("lexer error: library statement must end with lib id");
-            if libs.contains_key(name.as_str()) {
+            if map.contains_key(name.as_str()) {
                 self.issues
                     .push_error(Error::RepeatedLibName(name.as_str().to_owned()), name.as_span());
             } else {
                 match LibId::from_str(id.as_str()) {
                     Ok(libid) => {
-                        libs.insert(name.as_str().to_owned(), libid);
+                        map.insert(name.as_str().to_owned(), libid);
                     }
                     Err(err) => {
                         self.issues.push_error(
@@ -99,7 +108,7 @@ impl<'i> Program<'i> {
                 }
             }
         }
-        self.libs = libs;
+        self.libs = Libs { map, span };
     }
 
     fn analyze_const(&mut self, pair: Pair<'i, Rule>) {
@@ -310,7 +319,22 @@ impl<'i> Analyze<'i> for Operand<'i> {
                 };
                 Operand::Reg { set, index: index.into(), span }
             }
-            Rule::call => Operand::Call(pair.as_str().to_owned(), span),
+            Rule::call => {
+                let span = pair.as_span();
+                let mut iter = pair.into_inner();
+                let lib = iter
+                    .next()
+                    .expect("lexer error: call statement without library name")
+                    .as_str()
+                    .to_owned();
+                let routine = iter
+                    .next()
+                    .expect("lexer error: call statement without routine name")
+                    .as_str()
+                    .to_owned();
+
+                Operand::Call { lib, routine, span }
+            }
             Rule::lit => Operand::Lit(Literal::analyze(pair, issues), span),
             Rule::var => Operand::Const(pair.as_str().to_owned(), span),
             Rule::goto => Operand::Goto(Goto::analyze(pair, issues), span),

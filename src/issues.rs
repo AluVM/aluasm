@@ -14,6 +14,7 @@ use aluvm::Isa;
 use pest::Span;
 
 use crate::ast::Operator;
+use crate::compiler::LibError;
 
 pub trait Issue: Debug + Display {
     fn errno(&self) -> u16;
@@ -102,6 +103,13 @@ pub enum Error {
 
     /// constant `{name}` is {found}, while {expected} is required in this position
     ConstWrongType { name: String, expected: &'static str, found: &'static str },
+
+    /// undeclared library name `{0}`
+    LibUnknown(String),
+
+    #[from]
+    #[display(inner)]
+    LibError(LibError),
 }
 
 impl Issue for Error {
@@ -139,6 +147,11 @@ impl Issue for Error {
             Error::OperandRegMutBeEqual(_) => 29,
             Error::ConstUnknown(_) => 30,
             Error::ConstWrongType { .. } => 31,
+            Error::LibUnknown(_) => 32,
+            Error::LibError(err) => match err {
+                LibError::LibNotFound(_, _) => 33,
+                LibError::TooManyRoutines => 34,
+            },
         }
     }
 

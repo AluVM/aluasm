@@ -11,7 +11,7 @@
                     put     5,a16[8]
                     putif   0xAF67937B5498DC,r256[1]
                     putif   13,a8[1]
-                    call    some
+                    routine some
 
 .ROUTINE some
 loop:               swp     a8[1],a8[2]
@@ -37,7 +37,7 @@ loop:               swp     a8[1],a8[2]
                     st.s    a8[1]
                     put     13,a32[12]
                     put     66,a32[13]
-                    add.uc  a32[12],a32[13]     ; the same as .int=unsigned .overflow=checked
+                    add.uc  a32[12],a32[13]
                     add.sw  a32[12],a32[13]
                     sub.sw  a32[13],a32[12]
                     mul.uc  a32[12],a32[13]
