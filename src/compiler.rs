@@ -18,6 +18,7 @@ use aluvm::isa::{
 };
 use aluvm::libs::{Cursor, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
+use aluvm::Isa;
 use amplify::num::u1024;
 use pest::Span;
 use rustc_apfloat::ieee;
@@ -55,6 +56,7 @@ pub mod obj {
 
     #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
     pub struct Module {
+        pub isae: String,
         pub code: Vec<u8>,
         pub data: Vec<u8>,
         pub libs: LibSeg,
@@ -104,6 +106,7 @@ impl<'i> ast::Program<'i> {
     pub fn compile(&'i self) -> (obj::Module, Issues<'i>) {
         let mut issues = Issues::default();
 
+        let isae = self.isae.iter().map(Isa::to_string).collect::<Vec<_>>().join(" ");
         let mut libs_segment = LibSeg::default();
         self.libs.map.values().any(|id| {
             libs_segment
@@ -137,7 +140,14 @@ impl<'i> ast::Program<'i> {
         let symbols = obj::Symbols { externals, routines };
 
         (
-            obj::Module { code: code_segment.to_vec(), data, libs: libs_segment, input, symbols },
+            obj::Module {
+                isae,
+                code: code_segment.to_vec(),
+                data,
+                libs: libs_segment,
+                input,
+                symbols,
+            },
             issues,
         )
     }

@@ -19,6 +19,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+use aluvm::isa::ReservedOp;
+use aluvm::libs::Lib;
 use clap::{AppSettings, Clap};
 use pest::Parser;
 
@@ -60,6 +62,14 @@ fn main() {
             eprintln!("{}", issues);
             if !issues.has_errors() {
                 println!("{:?}", module);
+                let lib: Lib<ReservedOp> =
+                    Lib::with(&module.isae, module.code, module.data, module.libs)
+                        .expect("module can't be transformed into a library");
+                println!("{}", lib);
+                let code = lib.disassemble().expect("library disassembly failed");
+                for instr in code {
+                    println!("\t\t{}", instr);
+                }
             }
         }
     }

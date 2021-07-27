@@ -1,6 +1,6 @@
 .ISAE ; ISA Extensions segment
                     ALU
-                    ALURE
+                    ; ALURE ; need to add support
                     BPDIGEST
 
 .LIBS ; Library reference segment
