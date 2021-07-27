@@ -115,29 +115,72 @@ impl<'i> ast::Program<'i> {
                 .is_err()
         });
         let mut code_segment = ByteStr::default();
-        let mut writer = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
+        let mut cursor = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
 
         let mut externals = vec![];
         let mut frame = LibFrame::with(&libs_segment, &mut externals);
-        let routines = self
-            .code
+        let routine_map = self
+            .routines
             .iter()
-            .filter_map(|(name, routine)| {
-                Some((name.clone(), routine.compile(&mut writer, self, &mut frame, &mut issues)?))
+            .map(|(name, routine)| {
+                (name.clone(), routine.compile(&mut cursor, self, &mut frame, &mut issues))
             })
-            .collect();
+            .collect::<BTreeMap<_, _>>();
 
-        let pos = writer.pos();
-        let data = writer.into_data_segment();
+        let pos = cursor.pos();
+        let data = cursor.into_data_segment();
         match pos {
             Some(pos) => code_segment.adjust_len(pos, false),
             None => code_segment.adjust_len(u16::MAX, true),
+        }
+        let mut cursor = Cursor::with(&mut code_segment, data, &libs_segment);
+
+        for routine in self.routines.values() {
+            let map = routine_map.get(&routine.name).expect("internal error I0008");
+            let start = *map.first().expect("internal error I0009");
+            for (offset, statement) in routine.statements.iter().enumerate() {
+                if statement.operator.0 == Operator::routine {
+                    let (routine_name, span) = match statement.routine(0, &mut issues) {
+                        Some(name) => name,
+                        None => continue,
+                    };
+                    let pos = match routine_map
+                        .get(&routine_name)
+                        .map(|map| map.first().expect("internal error I0009"))
+                    {
+                        Some(pos) => *pos,
+                        None => {
+                            issues.push_error(Error::RoutineUnknown(routine_name), span);
+                            continue;
+                        }
+                    };
+                    cursor.seek(start + map[offset]);
+                    let mut instr =
+                        Instr::<ReservedOp>::read(&mut cursor).expect("internal error I0005");
+                    let to = if let Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) = instr {
+                        to
+                    } else {
+                        eprintln!("RoutineMap {:?}\n", routine_map);
+                        eprintln!("{:#?}\n", cursor);
+                        eprintln!("{:#?}\n", statement);
+                        unreachable!("internal error I0006")
+                    };
+                    *to = pos;
+                    cursor.seek(start + map[offset]);
+                    instr.write(&mut cursor).expect("internal error I0007");
+                }
+            }
         }
 
         // TODO: Collect inputs
         let input = vec![];
 
+        let routines = routine_map
+            .iter()
+            .filter_map(|(name, map)| Some((name.clone(), *map.first()?)))
+            .collect();
         let symbols = obj::Symbols { externals, routines };
+        let data = cursor.into_data_segment();
 
         (
             obj::Module {
@@ -160,15 +203,11 @@ impl<'i> ast::Routine<'i> {
         program: &'i ast::Program,
         frame: &mut LibFrame,
         issues: &mut Issues<'i>,
-    ) -> Option<u16> {
-        let mut instr_map = Vec::with_capacity(self.code.len());
+    ) -> Vec<u16> {
+        let mut instr_map = Vec::with_capacity(self.statements.len());
         let mut jump_map = bmap![];
 
-        if issues.has_errors() {
-            return cursor.pos();
-        }
-
-        for (no, statement) in self.code.iter().enumerate() {
+        for (no, statement) in self.statements.iter().enumerate() {
             let pos = match cursor.pos() {
                 Some(pos) => pos,
                 None => {
@@ -202,10 +241,11 @@ impl<'i> ast::Routine<'i> {
                 unreachable!("internal error I0006")
             };
             *pos = instr_map[to as usize];
-            instr.write(cursor).expect("internal error I0006");
+            cursor.seek(from);
+            instr.write(cursor).expect("internal error I0007");
         }
 
-        instr_map.get(0).copied().or_else(|| cursor.pos())
+        instr_map
     }
 }
 
@@ -414,6 +454,39 @@ impl<'i> ast::Statement<'i> {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "goto statement",
+                    },
+                    self.span.clone(),
+                );
+                None
+            })
+    }
+
+    fn routine(&'i self, no: u8, issues: &mut Issues<'i>) -> Option<(String, Span)> {
+        self.operands
+            .get(no as usize)
+            .and_then(|op| match op {
+                Operand::Goto(goto, span) => Some((goto.clone(), span.clone())),
+                Operand::Reg { span, .. }
+                | Operand::Const(_, span)
+                | Operand::Lit(_, span)
+                | Operand::Call { span, .. } => {
+                    issues.push_error(
+                        Error::OperandWrongType {
+                            operator: self.operator.0,
+                            pos: no + 1,
+                            expected: "routine call statement",
+                        },
+                        span.clone(),
+                    );
+                    None
+                }
+            })
+            .or_else(|| {
+                issues.push_error(
+                    Error::OperandMissed {
+                        operator: self.operator.0,
+                        pos: no + 1,
+                        expected: "routine call statement",
                     },
                     self.span.clone(),
                 );

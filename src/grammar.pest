@@ -47,7 +47,7 @@ libs = {  ".LIBS" ~ NEWLINE* ~ lib_def* }
 
 goto = { ident }
 call_name = { ident }
-call = { lib_name? ~ "->" ~ call_name }
+call = { lib_name ~ "->" ~ call_name }
 
 label = { ident }
 flag = { ASCII_ALPHA_LOWER }
@@ -59,7 +59,7 @@ instruction = { (label ~ ":")? ~ NEWLINE* ~ operator ~ (operand ~ ",")* ~ operan
 routine_name = { ident }
 routine_main = { ".MAIN" ~ NEWLINE* }
 routine_decl = _{ ".ROUTINE" ~ routine_name ~ NEWLINE* }
-routine = { (routine_decl | routine_main) ~ instruction* }
+routine = { (routine_decl | routine_main) ~ instruction+ }
 
 var_name = { ident }
 var = ${ "$" ~ var_name }

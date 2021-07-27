@@ -25,7 +25,7 @@ pub struct Program<'i> {
     pub isae: BTreeSet<Isa>,
     pub libs: Libs<'i>,
     pub main: Option<Routine<'i>>,
-    pub code: BTreeMap<String, Routine<'i>>,
+    pub routines: BTreeMap<String, Routine<'i>>,
     pub r#const: BTreeMap<String, Const<'i>>,
     pub input: BTreeMap<String, Var<'i>>,
     pub issues: Issues<'i>,
@@ -56,7 +56,7 @@ pub struct Var<'i> {
 pub struct Routine<'i> {
     pub name: String,
     pub labels: BTreeMap<String, u16>,
-    pub code: Vec<Statement<'i>>,
+    pub statements: Vec<Statement<'i>>,
     pub span: Span<'i>,
 }
 

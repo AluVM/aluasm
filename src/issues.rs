@@ -25,7 +25,7 @@ pub trait Issue: Debug + Display {
 #[display(doc_comments)]
 pub enum Error {
     /// re-definition of `{0}` routine
-    RepeatedRoutineName(String),
+    RoutineNameReuse(String),
 
     /// unknown operation mnemonic `{0}`
     UnknownMnemonic(String),
@@ -110,12 +110,15 @@ pub enum Error {
     #[from]
     #[display(inner)]
     LibError(LibError),
+
+    /// call to an unknown routine `{0}`
+    RoutineUnknown(String),
 }
 
 impl Issue for Error {
     fn errno(&self) -> u16 {
         match self {
-            Error::RepeatedRoutineName(_) => 1,
+            Error::RoutineNameReuse(_) => 1,
             Error::UnknownMnemonic(_) => 2,
             Error::RepeatedLabel { .. } => 3,
             Error::WrongRegister { .. } => 4,
@@ -152,6 +155,7 @@ impl Issue for Error {
                 LibError::LibNotFound(_, _) => 33,
                 LibError::TooManyRoutines => 34,
             },
+            Error::RoutineUnknown(_) => 35,
         }
     }
 

@@ -30,7 +30,7 @@ impl<'i> Program<'i> {
             isae: Default::default(),
             libs: Libs { map: bmap! {}, span: pair.as_span() },
             main: None,
-            code: Default::default(),
+            routines: Default::default(),
             r#const: Default::default(),
             input: Default::default(),
             issues: Default::default(),
@@ -76,10 +76,10 @@ impl<'i> Program<'i> {
     fn analyze_routine(&mut self, pair: Pair<'i, Rule>) {
         let span = pair.as_span();
         let routine = Routine::analyze(pair, &mut self.issues);
-        if self.code.contains_key(&routine.name) {
-            self.issues.push_error(Error::RepeatedRoutineName(routine.name), span);
+        if self.routines.contains_key(&routine.name) {
+            self.issues.push_error(Error::RoutineNameReuse(routine.name), span);
         } else {
-            self.code.insert(routine.name.clone(), routine);
+            self.routines.insert(routine.name.clone(), routine);
         }
     }
 
@@ -180,7 +180,7 @@ impl<'i> Analyze<'i> for Routine<'i> {
             })
             .collect();
 
-        Routine { name, labels, code, span }
+        Routine { name, labels, statements: code, span }
     }
 }
 
