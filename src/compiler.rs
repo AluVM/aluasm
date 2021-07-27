@@ -14,7 +14,7 @@ use std::str::FromStr;
 use aluvm::data::{ByteStr, MaybeNumber, Step};
 use aluvm::isa::{
     ArithmeticOp, BitwiseOp, Bytecode, CmpOp, ControlFlowOp, DigestOp, Flag, Instr, MoveOp,
-    ParseFlagError, PutOp, Secp256k1Op,
+    ParseFlagError, PutOp, ReservedOp, Secp256k1Op,
 };
 use aluvm::libs::{Cursor, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
@@ -146,33 +146,60 @@ impl<'i> ast::Program<'i> {
 impl<'i> ast::Routine<'i> {
     pub fn compile(
         &'i self,
-        writer: &mut (impl Read + Write),
+        cursor: &mut (impl Read + Write),
         program: &'i ast::Program,
         frame: &mut LibFrame,
         issues: &mut Issues<'i>,
     ) -> Option<u16> {
-        let mut map = Vec::with_capacity(self.code.len());
+        let mut instr_map = Vec::with_capacity(self.code.len());
+        let mut jump_map = bmap![];
 
         if issues.has_errors() {
-            return writer.pos();
+            return cursor.pos();
         }
 
-        for line in &self.code {
-            map.push(writer.pos());
-            let instr = line.compile(program, frame, issues);
-            if let Err(err) = instr.write(writer) {
-                issues.push_error(err.into(), line.span.clone());
+        for (no, statement) in self.code.iter().enumerate() {
+            let pos = match cursor.pos() {
+                Some(pos) => pos,
+                None => {
+                    issues.push_error(Error::CodeLengthOverflow, statement.span.clone());
+                    break;
+                }
+            };
+            instr_map.push(pos);
+            let instr = statement.compile(program, frame, issues);
+            if let Err(err) = instr.write(cursor) {
+                issues.push_error(err.into(), statement.span.clone());
                 break;
+            }
+            if matches!(statement.operator.0, Operator::jif | Operator::jmp) {
+                let instr_no = statement
+                    .goto(0, issues)
+                    .and_then(|label| self.labels.get(&label).copied())
+                    .unwrap_or(no as u16);
+                jump_map.insert(pos, instr_no);
             }
         }
 
-        // TODO: Replace jumps
+        for (from, to) in jump_map {
+            cursor.seek(from);
+            let mut instr = Instr::<ReservedOp>::read(cursor).expect("internal error I0005");
+            let pos = if let Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
+            | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) = instr
+            {
+                pos
+            } else {
+                unreachable!("internal error I0006")
+            };
+            *pos = instr_map[to as usize];
+            instr.write(cursor).expect("internal error I0006");
+        }
 
-        map.get(0).copied().unwrap_or_else(|| writer.pos())
+        instr_map.get(0).copied().or_else(|| cursor.pos())
     }
 }
 
-impl<'i> ast::Instruction<'i> {
+impl<'i> ast::Statement<'i> {
     fn reg<T>(&'i self, no: u8, issues: &mut Issues<'i>) -> T
     where
         T: TryFrom<RegAll> + Register,
@@ -349,6 +376,39 @@ impl<'i> ast::Instruction<'i> {
         };
         val.reshape(reg.layout());
         val
+    }
+
+    fn goto(&'i self, no: u8, issues: &mut Issues<'i>) -> Option<String> {
+        self.operands
+            .get(no as usize)
+            .and_then(|op| match op {
+                Operand::Goto(goto, _) => Some(goto.clone()),
+                Operand::Reg { span, .. }
+                | Operand::Const(_, span)
+                | Operand::Lit(_, span)
+                | Operand::Call { span, .. } => {
+                    issues.push_error(
+                        Error::OperandWrongType {
+                            operator: self.operator.0,
+                            pos: no + 1,
+                            expected: "goto statement",
+                        },
+                        span.clone(),
+                    );
+                    None
+                }
+            })
+            .or_else(|| {
+                issues.push_error(
+                    Error::OperandMissed {
+                        operator: self.operator.0,
+                        pos: no + 1,
+                        expected: "goto statement",
+                    },
+                    self.span.clone(),
+                );
+                None
+            })
     }
 
     fn lib(

@@ -56,12 +56,12 @@ pub struct Var<'i> {
 pub struct Routine<'i> {
     pub name: String,
     pub labels: BTreeMap<String, u16>,
-    pub code: Vec<Instruction<'i>>,
+    pub code: Vec<Statement<'i>>,
     pub span: Span<'i>,
 }
 
 #[derive(Clone, Hash, Debug)]
-pub struct Instruction<'i> {
+pub struct Statement<'i> {
     pub label: Option<(String, Span<'i>)>,
     pub operator: (Operator, Span<'i>),
     pub flags: FlagSet<'i, char>,
@@ -89,7 +89,7 @@ pub struct KeyedFlag<'i> {
 #[derive(Clone, Hash, Debug)]
 pub enum Operand<'i> {
     Reg { set: RegAll, index: Reg32, span: Span<'i> },
-    Goto(Goto, Span<'i>),
+    Goto(String, Span<'i>),
     Call { lib: String, routine: String, span: Span<'i> },
     Lit(Literal, Span<'i>),
     Const(String, Span<'i>),
@@ -115,19 +115,6 @@ impl<'i> Operand<'i> {
             Operand::Const(_, _) => "constant value",
         }
     }
-}
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub enum Goto {
-    Label(String),
-    Offset(Offset),
-}
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub enum Offset {
-    Backward(u16),
-    Forward(u16),
-    Exact(u16),
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]

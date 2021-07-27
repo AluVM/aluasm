@@ -20,8 +20,7 @@ use amplify::num::{u1024, u5};
 use pest::iterators::Pair;
 
 use crate::ast::{
-    Const, FlagSet, Goto, Instruction, IntBase, Libs, Literal, Offset, Operand, Operator, Program,
-    Routine, Var,
+    Const, FlagSet, IntBase, Libs, Literal, Operand, Operator, Program, Routine, Statement, Var,
 };
 use crate::{Error, Issues, Rule, Warning};
 
@@ -162,11 +161,11 @@ impl<'i> Analyze<'i> for Routine<'i> {
         .to_owned();
 
         let mut labels = bmap![];
-        let code: Vec<Instruction> = iter
+        let code: Vec<Statement> = iter
             .enumerate()
             .map(|(index, pair)| {
                 let span = pair.as_span();
-                let op = Instruction::analyze(pair, issues);
+                let op = Statement::analyze(pair, issues);
                 if let Some(label) = op.label.clone() {
                     if labels.contains_key(&label.0) {
                         issues.push_error(
@@ -185,7 +184,7 @@ impl<'i> Analyze<'i> for Routine<'i> {
     }
 }
 
-impl<'i> Analyze<'i> for Instruction<'i> {
+impl<'i> Analyze<'i> for Statement<'i> {
     fn analyze(pair: Pair<'i, Rule>, issues: &mut Issues<'i>) -> Self {
         let span = pair.as_span();
         let mut iter = pair.into_inner();
@@ -232,7 +231,7 @@ impl<'i> Analyze<'i> for Instruction<'i> {
             operands.push(Operand::analyze(pair, issues))
         }
 
-        Instruction { label, operator, flags, operands, span }
+        Statement { label, operator, flags, operands, span }
     }
 }
 
@@ -337,7 +336,7 @@ impl<'i> Analyze<'i> for Operand<'i> {
             }
             Rule::lit => Operand::Lit(Literal::analyze(pair, issues), span),
             Rule::var => Operand::Const(pair.as_str().to_owned(), span),
-            Rule::goto => Operand::Goto(Goto::analyze(pair, issues), span),
+            Rule::goto => Operand::Goto(pair.as_str().to_owned(), span),
             _ => unreachable!("lexer error: unexpected operand {} at {:?}", pair.as_str(), span),
         }
     }
@@ -440,34 +439,6 @@ fn replace_special_chars(s: &str) -> String {
         .replace("\\'", "'")
         .replace("\\\\", "\\")
     // TODO: Remove hex and unicode escape sequences
-}
-
-impl<'i> Analyze<'i> for Goto {
-    fn analyze(pair: Pair<'i, Rule>, _issues: &mut Issues<'i>) -> Self {
-        let mut iter = pair.into_inner();
-        let inner = iter
-            .next()
-            .expect("lexer error: goto statement must contain either label name or an offset");
-        match inner.as_rule() {
-            Rule::goto_name => Goto::Label(inner.as_str().to_owned()),
-            _ => {
-                let offset = iter
-                    .next()
-                    .expect("lexer error: offset-based goto statement must contain offset value")
-                    .as_str()
-                    .parse()
-                    .expect("lexer error: offset in goto statement must be a valid 16-bit integer");
-                match inner.as_rule() {
-                    Rule::goto_exact => Goto::Offset(Offset::Exact(offset)),
-                    Rule::goto_fwd => Goto::Offset(Offset::Forward(offset)),
-                    Rule::goto_rev => Goto::Offset(Offset::Backward(offset)),
-                    x => {
-                        unreachable!("lexer error: unknown goto rule `{:?}`", x)
-                    }
-                }
-            }
-        }
-    }
 }
 
 impl<'i> Analyze<'i> for Const<'i> {

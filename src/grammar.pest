@@ -45,13 +45,7 @@ lib_name = { lib_bech | lib_ident }
 lib_def = { lib_ident ~ lib_ident ~ NEWLINE+ }
 libs = {  ".LIBS" ~ NEWLINE* ~ lib_def* }
 
-goto_fwd = @{ "+" }
-goto_rev = @{ "-" }
-goto_exact = @{ "=" }
-goto_offset = _{ (goto_fwd | goto_rev | goto_exact) ~ lit_num }
-goto_name = { ident }
-goto = { goto_name | goto_offset }
-
+goto = { ident }
 call_name = { ident }
 call = { lib_name? ~ "->" ~ call_name }
 
