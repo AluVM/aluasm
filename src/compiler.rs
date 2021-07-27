@@ -19,6 +19,7 @@ use aluvm::isa::{
 use aluvm::libs::{Cursor, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
 use aluvm::Isa;
+use amplify::hex::ToHex;
 use amplify::num::u1024;
 use pest::Span;
 use rustc_apfloat::ieee;
@@ -129,10 +130,15 @@ impl<'i> ast::Program<'i> {
 
         let pos = cursor.pos();
         let data = cursor.into_data_segment();
-        match pos {
-            Some(pos) => code_segment.adjust_len(pos, false),
-            None => code_segment.adjust_len(u16::MAX, true),
+        code_segment.adjust_len(pos);
+
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("\nCursorPos = {:?}", pos);
+            eprintln!("Bytecode = {:?}", code_segment.as_ref().to_hex());
+            eprintln!("RoutineMap {:?}\n", routine_map);
         }
+
         let mut cursor = Cursor::with(&mut code_segment, data, &libs_segment);
 
         for routine in self.routines.values() {
@@ -154,7 +160,7 @@ impl<'i> ast::Program<'i> {
                             continue;
                         }
                     };
-                    cursor.seek(start + map[offset]);
+                    cursor.seek(Some(start + map[offset]));
                     let mut instr =
                         Instr::<ReservedOp>::read(&mut cursor).expect("internal error I0005");
                     let to = if let Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) = instr {
@@ -166,7 +172,7 @@ impl<'i> ast::Program<'i> {
                         unreachable!("internal error I0006")
                     };
                     *to = pos;
-                    cursor.seek(start + map[offset]);
+                    cursor.seek(Some(start + map[offset]));
                     instr.write(&mut cursor).expect("internal error I0007");
                 }
             }
@@ -228,10 +234,20 @@ impl<'i> ast::Routine<'i> {
                     .unwrap_or(no as u16);
                 jump_map.insert(pos, instr_no);
             }
+
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "{:05}: {}\n    => {}",
+                instr_map.last().unwrap(),
+                statement.span.as_str().trim(),
+                instr
+            );
         }
 
+        let end = cursor.pos();
+
         for (from, to) in jump_map {
-            cursor.seek(from);
+            cursor.seek(Some(from));
             let mut instr = Instr::<ReservedOp>::read(cursor).expect("internal error I0005");
             let pos = if let Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
             | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) = instr
@@ -241,9 +257,11 @@ impl<'i> ast::Routine<'i> {
                 unreachable!("internal error I0006")
             };
             *pos = instr_map[to as usize];
-            cursor.seek(from);
+            cursor.seek(Some(from));
             instr.write(cursor).expect("internal error I0007");
         }
+
+        cursor.seek(end);
 
         instr_map
     }
