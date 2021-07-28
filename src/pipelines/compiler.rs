@@ -9,6 +9,8 @@
 
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
+use std::fs::File;
+use std::io::Write as IoWrite;
 use std::str::FromStr;
 
 use aluvm::data::{ByteStr, MaybeNumber, Step};
@@ -19,14 +21,14 @@ use aluvm::isa::{
 use aluvm::libs::{Cursor, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
 use aluvm::Isa;
-use amplify::hex::ToHex;
 use amplify::num::u1024;
 use pest::Span;
 use rustc_apfloat::ieee;
 
 use crate::ast::{Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement};
-use crate::issues::{Error, Issues};
+use crate::issues::{self, CompileError, Issues};
 use crate::obj::{Module, Symbols};
+use crate::InternalError;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
@@ -66,7 +68,10 @@ impl<'a, 'b> LibFrame<'a, 'b> {
 }
 
 impl<'i> Program<'i> {
-    pub fn compile(&'i self) -> (Module, Issues<'i>) {
+    pub fn compile(
+        &'i self,
+        dump: &mut Option<File>,
+    ) -> Result<(Module, Issues<'i, issues::Compile>), InternalError> {
         let mut issues = Issues::default();
 
         let isae = self.isae.iter().map(Isa::to_string).collect::<Vec<_>>().join(" ");
@@ -74,7 +79,7 @@ impl<'i> Program<'i> {
         self.libs.map.values().any(|id| {
             libs_segment
                 .add_lib(*id)
-                .map_err(|err| issues.push_error(err.into(), self.libs.span.clone()))
+                .map_err(|err| issues.push_error(err.into(), &self.libs.span))
                 .is_err()
         });
         let mut code_segment = ByteStr::default();
@@ -82,60 +87,54 @@ impl<'i> Program<'i> {
 
         let mut externals = vec![];
         let mut frame = LibFrame::with(&libs_segment, &mut externals);
-        let routine_map = self
-            .routines
-            .iter()
-            .map(|(name, routine)| {
-                (name.clone(), routine.compile(&mut cursor, self, &mut frame, &mut issues))
-            })
-            .collect::<BTreeMap<_, _>>();
+
+        let routine_map: BTreeMap<String, Vec<u16>> =
+            self.routines.iter().try_fold(bmap! {}, |mut map, (name, routine)| {
+                map.insert(
+                    name.clone(),
+                    routine.compile(&mut cursor, self, &mut frame, dump, &mut issues)?,
+                );
+                Ok(map)
+            })?;
 
         let pos = cursor.pos();
         let data = cursor.into_data_segment();
         code_segment.adjust_len(pos);
 
-        #[cfg(debug_assertions)]
-        {
-            eprintln!("\nCursorPos = {:?}", pos);
-            eprintln!("Bytecode = {:?}", code_segment.as_ref().to_hex());
-            eprintln!("RoutineMap {:?}\n", routine_map);
-        }
-
         let mut cursor = Cursor::with(&mut code_segment, data, &libs_segment);
 
         for routine in self.routines.values() {
-            let map = routine_map.get(&routine.name).expect("internal error I0008");
-            let start = *map.first().expect("internal error I0009");
+            let map = routine_map
+                .get(&routine.name)
+                .ok_or_else(|| InternalError::RoutineMissed(routine.name.clone()))?;
+            let start =
+                *map.first().ok_or_else(|| InternalError::RoutineEmpty(routine.name.clone()))?;
             for (offset, statement) in routine.statements.iter().enumerate() {
                 if statement.operator.0 == Operator::routine {
                     let (routine_name, span) = match statement.routine(0, &mut issues) {
                         Some(name) => name,
                         None => continue,
                     };
-                    let pos = match routine_map
-                        .get(&routine_name)
-                        .map(|map| map.first().expect("internal error I0009"))
-                    {
-                        Some(pos) => *pos,
+                    let posmap = match routine_map.get(&routine_name) {
+                        Some(map) => map,
                         None => {
-                            issues.push_error(Error::RoutineUnknown(routine_name), span);
+                            issues.push_error(CompileError::RoutineUnknown(routine_name), &span);
                             continue;
                         }
                     };
-                    cursor.seek(Some(start + map[offset]));
-                    let mut instr =
-                        Instr::<ReservedOp>::read(&mut cursor).expect("internal error I0005");
-                    let to = if let Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) = instr {
-                        to
-                    } else {
-                        eprintln!("RoutineMap {:?}\n", routine_map);
-                        eprintln!("{:#?}\n", cursor);
-                        eprintln!("{:#?}\n", statement);
-                        unreachable!("internal error I0006")
+                    let pos =
+                        *posmap.first().ok_or_else(|| InternalError::RoutineEmpty(routine_name))?;
+                    let seek = start + map[offset];
+                    cursor.seek(Some(seek));
+                    let mut instr = Instr::<ReservedOp>::read(&mut cursor)
+                        .map_err(|_| InternalError::InstrRead(seek))?;
+                    let to = match instr {
+                        Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) => to,
+                        other => return Err(InternalError::InstrChanged(seek, "routine", other)),
                     };
                     *to = pos;
-                    cursor.seek(Some(start + map[offset]));
-                    instr.write(&mut cursor).expect("internal error I0007");
+                    cursor.seek(Some(seek));
+                    instr.write(&mut cursor).map_err(|err| InternalError::InstrWrite(seek, err))?;
                 }
             }
         }
@@ -161,10 +160,10 @@ impl<'i> Program<'i> {
         let symbols = Symbols { externals, routines };
         let data = cursor.into_data_segment();
 
-        (
+        Ok((
             Module { isae, code: code_segment.to_vec(), data, libs: libs_segment, input, symbols },
             issues,
-        )
+        ))
     }
 }
 
@@ -174,23 +173,25 @@ impl<'i> Routine<'i> {
         cursor: &mut (impl Read + Write),
         program: &'i Program,
         frame: &mut LibFrame,
-        issues: &mut Issues<'i>,
-    ) -> Vec<u16> {
+        dump: &mut Option<File>,
+        issues: &mut Issues<'i, issues::Compile>,
+    ) -> Result<Vec<u16>, InternalError> {
         let mut instr_map = Vec::with_capacity(self.statements.len());
         let mut jump_map = bmap![];
 
+        let mut do_dump = true;
         for (no, statement) in self.statements.iter().enumerate() {
             let pos = match cursor.pos() {
                 Some(pos) => pos,
                 None => {
-                    issues.push_error(Error::CodeLengthOverflow, statement.span.clone());
+                    issues.push_error(CompileError::CodeLengthOverflow, &statement.span);
                     break;
                 }
             };
             instr_map.push(pos);
-            let instr = statement.compile(program, frame, issues);
+            let instr = statement.compile(program, frame, issues)?;
             if let Err(err) = instr.write(cursor) {
-                issues.push_error(err.into(), statement.span.clone());
+                issues.push_error(err.into(), &statement.span);
                 break;
             }
             if matches!(statement.operator.0, Operator::jif | Operator::jmp) {
@@ -201,40 +202,46 @@ impl<'i> Routine<'i> {
                 jump_map.insert(pos, instr_no);
             }
 
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "{:05}: {}\n    => {}",
-                instr_map.last().unwrap(),
-                statement.span.as_str().trim(),
-                instr
-            );
+            if do_dump {
+                if let Some(df) = dump {
+                    if let Err(err) = writeln!(
+                        df,
+                        "{:05}: {}\n    => {}",
+                        instr_map.last().unwrap(),
+                        statement.span.as_str().trim(),
+                        instr
+                    ) {
+                        eprintln!("\x1B[1;31mError:\x1B can't write dump\ndetails:{}", err);
+                        do_dump = false;
+                    }
+                }
+            }
         }
 
         let end = cursor.pos();
 
         for (from, to) in jump_map {
             cursor.seek(Some(from));
-            let mut instr = Instr::<ReservedOp>::read(cursor).expect("internal error I0005");
-            let pos = if let Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
-            | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) = instr
-            {
-                pos
-            } else {
-                unreachable!("internal error I0006")
+            let mut instr =
+                Instr::<ReservedOp>::read(cursor).map_err(|_| InternalError::InstrRead(from))?;
+            let pos = match instr {
+                Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
+                | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) => pos,
+                other => return Err(InternalError::InstrChanged(from, "jump", other)),
             };
             *pos = instr_map[to as usize];
             cursor.seek(Some(from));
-            instr.write(cursor).expect("internal error I0007");
+            instr.write(cursor).map_err(|err| InternalError::InstrWrite(from, err))?;
         }
 
         cursor.seek(end);
 
-        instr_map
+        Ok(instr_map)
     }
 }
 
 impl<'i> Statement<'i> {
-    fn reg<T>(&'i self, no: u8, issues: &mut Issues<'i>) -> T
+    fn reg<T>(&'i self, no: u8, issues: &mut Issues<'i, issues::Compile>) -> T
     where
         T: TryFrom<RegAll> + Register,
     {
@@ -242,36 +249,36 @@ impl<'i> Statement<'i> {
             .operands
             .get(no as usize)
             .map(|op| match op {
-                Operand::Reg { set, span, .. } => (*set, span.clone()),
+                Operand::Reg { set, span, .. } => (*set, span),
                 Operand::Goto(_, span)
                 | Operand::Const(_, span)
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        Error::OperandWrongType {
+                        CompileError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: T::description(),
                         },
-                        span.clone(),
+                        &span,
                     );
-                    (RegAll::default(), span.clone())
+                    (RegAll::default(), span)
                 }
             })
             .unwrap_or_else(|| {
                 issues.push_error(
-                    Error::OperandMissed {
+                    CompileError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: T::description(),
                     },
-                    self.span.clone(),
+                    &self.span,
                 );
-                (RegAll::default(), self.span.clone())
+                (RegAll::default(), &self.span)
             });
         operand.try_into().unwrap_or_else(|_| {
             issues.push_error(
-                Error::OperandWrongReg {
+                CompileError::OperandWrongReg {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: T::description(),
@@ -282,7 +289,7 @@ impl<'i> Statement<'i> {
         })
     }
 
-    fn idx<T>(&'i self, no: u8, issues: &mut Issues<'i>) -> T
+    fn idx<T>(&'i self, no: u8, issues: &mut Issues<'i, issues::Compile>) -> T
     where
         T: TryFrom<Reg32> + Register,
     {
@@ -290,36 +297,36 @@ impl<'i> Statement<'i> {
             .operands
             .get(no as usize)
             .map(|op| match op {
-                Operand::Reg { index, span, .. } => (*index, span.clone()),
+                Operand::Reg { index, span, .. } => (*index, span),
                 Operand::Goto(_, span)
                 | Operand::Const(_, span)
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        Error::OperandWrongType {
+                        CompileError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: T::description(),
                         },
-                        span.clone(),
+                        span,
                     );
-                    (Reg32::default(), span.clone())
+                    (Reg32::default(), span)
                 }
             })
             .unwrap_or_else(|| {
                 issues.push_error(
-                    Error::OperandMissed {
+                    CompileError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: T::description(),
                     },
-                    self.operator.1.clone(),
+                    &self.operator.1,
                 );
-                (Reg32::default(), self.operator.1.clone())
+                (Reg32::default(), &self.operator.1)
             });
         operand.try_into().unwrap_or_else(|_| {
             issues.push_error(
-                Error::OperandWrongReg {
+                CompileError::OperandWrongReg {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: T::description(),
@@ -330,7 +337,7 @@ impl<'i> Statement<'i> {
         })
     }
 
-    fn flags<F>(&'i self, issues: &mut Issues<'i>) -> F
+    fn flags<F>(&'i self, issues: &mut Issues<'i, issues::Compile>) -> F
     where
         WrappedFlag<F>: TryFrom<FlagSet<'i, char>, Error = FlagError<'i>>,
         F: Flag,
@@ -338,7 +345,7 @@ impl<'i> Statement<'i> {
         WrappedFlag::try_from(self.flags.clone())
             .map(|wrapper| wrapper.0)
             .map_err(|err| {
-                issues.push_error(err.inner.into(), err.span.unwrap_or(self.operator.1.clone()));
+                issues.push_error(err.inner.into(), err.span.as_ref().unwrap_or(&self.operator.1));
             })
             .unwrap_or_default()
     }
@@ -348,71 +355,72 @@ impl<'i> Statement<'i> {
         no: u8,
         reg: impl NumericRegister,
         consts: &'i BTreeMap<String, Const<'i>>,
-        issues: &mut Issues<'i>,
-    ) -> MaybeNumber {
+        issues: &mut Issues<'i, issues::Compile>,
+    ) -> Result<MaybeNumber, InternalError> {
         let operand = if let Some(operand) = self.operands.get(no as usize) {
             operand
         } else {
             issues.push_error(
-                Error::OperandMissed {
+                CompileError::OperandMissed {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: "constant or integer literal",
                 },
-                self.operator.1.clone(),
+                &self.operator.1,
             );
-            return MaybeNumber::none();
+            return Ok(MaybeNumber::none());
         };
 
         let mut val = match operand {
             Operand::Lit(Literal::Int(val, _), _) => MaybeNumber::from(val),
             Operand::Lit(Literal::Float(i, r, e), _) => MaybeNumber::from(
-                ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e)).expect("internal error I0003"),
+                ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e))
+                    .map_err(|err| InternalError::FloatConstruction(*i, *r, *e, err))?,
             ),
             Operand::Const(name, span) => {
                 let val = match consts.get(name) {
                     Some(val) => val,
                     None => {
-                        issues.push_error(Error::ConstUnknown(name.clone()), span.clone());
-                        return MaybeNumber::none();
+                        issues.push_error(CompileError::ConstUnknown(name.clone()), span);
+                        return Ok(MaybeNumber::none());
                     }
                 };
                 match &val.value {
                     Literal::Int(val, _) => MaybeNumber::from(val),
                     Literal::Float(i, r, e) => MaybeNumber::from(
                         ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e))
-                            .expect("internal error I0004"),
+                            .map_err(|err| InternalError::FloatConstruction(*i, *r, *e, err))?,
                     ),
                     lit => {
                         issues.push_error(
-                            Error::ConstWrongType {
+                            CompileError::ConstWrongType {
                                 name: name.clone(),
                                 expected: "integer or float",
                                 found: lit.description(),
                             },
-                            span.clone(),
+                            span,
                         );
-                        return MaybeNumber::none();
+                        return Ok(MaybeNumber::none());
                     }
                 }
             }
             op => {
                 issues.push_error(
-                    Error::OperandWrongType {
+                    CompileError::OperandWrongType {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: op.description(),
                     },
-                    op.as_span().clone(),
+                    op.as_span(),
                 );
-                return MaybeNumber::none();
+                return Ok(MaybeNumber::none());
             }
         };
         val.reshape(reg.layout());
-        val
+        Ok(val)
     }
 
-    fn goto(&'i self, no: u8, issues: &mut Issues<'i>) -> Option<String> {
+    fn goto(&'i self, no: u8, issues: &mut Issues<'i, issues::Compile>) -> Option<String> {
         self.operands
             .get(no as usize)
             .and_then(|op| match op {
@@ -422,30 +430,34 @@ impl<'i> Statement<'i> {
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        Error::OperandWrongType {
+                        CompileError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: "goto statement",
                         },
-                        span.clone(),
+                        span,
                     );
                     None
                 }
             })
             .or_else(|| {
                 issues.push_error(
-                    Error::OperandMissed {
+                    CompileError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "goto statement",
                     },
-                    self.span.clone(),
+                    &self.span,
                 );
                 None
             })
     }
 
-    fn routine(&'i self, no: u8, issues: &mut Issues<'i>) -> Option<(String, Span)> {
+    fn routine(
+        &'i self,
+        no: u8,
+        issues: &mut Issues<'i, issues::Compile>,
+    ) -> Option<(String, Span)> {
         self.operands
             .get(no as usize)
             .and_then(|op| match op {
@@ -455,24 +467,24 @@ impl<'i> Statement<'i> {
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        Error::OperandWrongType {
+                        CompileError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: "routine call statement",
                         },
-                        span.clone(),
+                        span,
                     );
                     None
                 }
             })
             .or_else(|| {
                 issues.push_error(
-                    Error::OperandMissed {
+                    CompileError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "routine call statement",
                     },
-                    self.span.clone(),
+                    &self.span,
                 );
                 None
             })
@@ -483,18 +495,18 @@ impl<'i> Statement<'i> {
         no: u8,
         program: &'i Program,
         frame: &mut LibFrame,
-        issues: &mut Issues<'i>,
+        issues: &mut Issues<'i, issues::Compile>,
     ) -> LibSite {
         let operand = if let Some(operand) = self.operands.get(no as usize) {
             operand
         } else {
             issues.push_error(
-                Error::OperandMissed {
+                CompileError::OperandMissed {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: "external call statement",
                 },
-                self.operator.1.clone(),
+                &self.operator.1,
             );
             return LibSite::default();
         };
@@ -502,25 +514,25 @@ impl<'i> Statement<'i> {
         match operand {
             Operand::Call { lib, routine, span } => {
                 let id = program.libs.map.get(lib).copied().unwrap_or_else(|| {
-                    issues.push_error(Error::LibUnknown(lib.clone()), span.clone());
+                    issues.push_error(CompileError::LibUnknown(lib.clone()), span);
                     LibId::default()
                 });
                 match frame.find_or_insert_ext(id, routine) {
                     Ok((_, pos)) => return LibSite::with(pos, id),
                     Err(err) => {
-                        issues.push_error(err.into(), span.clone());
+                        issues.push_error(err.into(), span);
                         return LibSite::default();
                     }
                 }
             }
             op => {
                 issues.push_error(
-                    Error::OperandWrongType {
+                    CompileError::OperandWrongType {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: op.description(),
                     },
-                    op.as_span().clone(),
+                    op.as_span(),
                 );
                 return LibSite::default();
             }
@@ -531,8 +543,8 @@ impl<'i> Statement<'i> {
         &'i self,
         program: &'i Program,
         frame: &mut LibFrame,
-        issues: &mut Issues<'i>,
-    ) -> Instr {
+        issues: &mut Issues<'i, issues::Compile>,
+    ) -> Result<Instr, InternalError> {
         macro_rules! reg {
             ($no:expr) => {
                 self.reg($no, issues)
@@ -545,7 +557,7 @@ impl<'i> Statement<'i> {
         }
         macro_rules! val {
             ($no:expr, $reg:ident) => {
-                Box::new(self.val($no, $reg, &program.r#const, issues))
+                Box::new(self.val($no, $reg, &program.consts, issues)?)
             };
         }
         macro_rules! lib {
@@ -558,7 +570,7 @@ impl<'i> Statement<'i> {
                 self.flags(issues)
             };
         }
-        match self.operator.0 {
+        Ok(match self.operator.0 {
             Operator::read => Instr::Nop,
 
             Operator::succ => Instr::ControlFlow(ControlFlowOp::Succ),
@@ -591,8 +603,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -605,8 +617,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -634,8 +646,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -649,8 +661,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -663,8 +675,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -677,8 +689,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -710,7 +722,7 @@ impl<'i> Statement<'i> {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
                     if step > u1024::from(i16::MAX as u16) {
                         step = u1024::from(1u64);
-                        issues.push_error(Error::StepTooLarge(self.operator.0), span.clone());
+                        issues.push_error(CompileError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
@@ -721,8 +733,8 @@ impl<'i> Statement<'i> {
                     let reg = reg! {0};
                     if reg != reg! {1} {
                         issues.push_error(
-                            Error::OperandRegMutBeEqual(self.operator.0),
-                            self.operands[2].as_span().clone(),
+                            CompileError::OperandRegMutBeEqual(self.operator.0),
+                            self.operands[2].as_span(),
                         );
                     }
                     match reg {
@@ -739,7 +751,7 @@ impl<'i> Statement<'i> {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
                     if step > u1024::from(i16::MAX as u16) {
                         step = u1024::from(1u64);
-                        issues.push_error(Error::StepTooLarge(self.operator.0), span.clone());
+                        issues.push_error(CompileError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
@@ -750,8 +762,8 @@ impl<'i> Statement<'i> {
                     let reg = reg! {0};
                     if reg != reg! {1} {
                         issues.push_error(
-                            Error::OperandRegMutBeEqual(self.operator.0),
-                            self.operands[2].as_span().clone(),
+                            CompileError::OperandRegMutBeEqual(self.operator.0),
+                            self.operands[2].as_span(),
                         );
                     }
                     match reg {
@@ -768,8 +780,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -785,8 +797,8 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 match reg {
@@ -809,14 +821,14 @@ impl<'i> Statement<'i> {
                 let reg: RegAR = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[1].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span(),
                     );
                 }
                 if reg != reg! {2} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 Instr::Bitwise(BitwiseOp::And(reg, idx! {0}, idx! {1}, idx! {2}))
@@ -825,14 +837,14 @@ impl<'i> Statement<'i> {
                 let reg: RegAR = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[1].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span(),
                     );
                 }
                 if reg != reg! {2} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 Instr::Bitwise(BitwiseOp::Or(reg, idx! {0}, idx! {1}, idx! {2}))
@@ -841,14 +853,14 @@ impl<'i> Statement<'i> {
                 let reg: RegAR = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[1].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span(),
                     );
                 }
                 if reg != reg! {2} {
                     issues.push_error(
-                        Error::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span().clone(),
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[2].as_span(),
                     );
                 }
                 Instr::Bitwise(BitwiseOp::Xor(reg, idx! {0}, idx! {1}, idx! {2}))
@@ -872,14 +884,14 @@ impl<'i> Statement<'i> {
                 let reg: RegR = reg! {1};
                 if reg != RegR::R160 {
                     issues.push_error(
-                        Error::OperandWrongReg {
+                        CompileError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "r160 register",
                         },
-                        self.operands[1].as_span().clone(),
+                        self.operands[1].as_span(),
                     );
-                    return Instr::Nop;
+                    return Ok(Instr::Nop);
                 }
                 Instr::Digest(DigestOp::Ripemd(idx! {0}, idx! {1}))
             }
@@ -888,14 +900,14 @@ impl<'i> Statement<'i> {
                 RegR::R512 => Instr::Digest(DigestOp::Sha512(idx! {0}, idx! {1})),
                 _ => {
                     issues.push_error(
-                        Error::OperandWrongReg {
+                        CompileError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "r256 or r512 registers",
                         },
-                        self.operands[1].as_span().clone(),
+                        self.operands[1].as_span(),
                     );
-                    return Instr::Nop;
+                    return Ok(Instr::Nop);
                 }
             },
 
@@ -905,14 +917,14 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != [RegR::R256, RegR::R512][r as usize] {
                         issues.push_error(
-                            Error::OperandWrongReg {
+                            CompileError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: if r == 0 { "r256 register" } else { "r512 register" },
                             },
-                            self.operands[r as usize].as_span().clone(),
+                            self.operands[r as usize].as_span(),
                         );
-                        return Instr::Nop;
+                        return Ok(Instr::Nop);
                     }
                 }
                 Instr::Secp256k1(Secp256k1Op::Gen(idx! {0}, idx! {1}))
@@ -922,14 +934,14 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != RegR::R512 {
                         issues.push_error(
-                            Error::OperandWrongReg {
+                            CompileError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: "r512 register",
                             },
-                            self.operands[r as usize].as_span().clone(),
+                            self.operands[r as usize].as_span(),
                         );
-                        return Instr::Nop;
+                        return Ok(Instr::Nop);
                     }
                 }
                 Instr::Secp256k1(Secp256k1Op::Neg(idx! {0}, idx! {1}))
@@ -939,14 +951,14 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != RegR::R512 {
                         issues.push_error(
-                            Error::OperandWrongReg {
+                            CompileError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: "r512 register",
                             },
-                            self.operands[r as usize].as_span().clone(),
+                            self.operands[r as usize].as_span(),
                         );
-                        return Instr::Nop;
+                        return Ok(Instr::Nop);
                     }
                 }
                 Instr::Secp256k1(Secp256k1Op::Add(idx! {0}, idx! {1}))
@@ -956,21 +968,21 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != RegR::R512 {
                         issues.push_error(
-                            Error::OperandWrongReg {
+                            CompileError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: "r512 register",
                             },
-                            self.operands[r as usize].as_span().clone(),
+                            self.operands[r as usize].as_span(),
                         );
-                        return Instr::Nop;
+                        return Ok(Instr::Nop);
                     }
                 }
                 Instr::Secp256k1(Secp256k1Op::Mul(reg! {0}, idx! {0}, idx! {1}, idx! {2}))
             }
 
             Operator::nop => Instr::Nop,
-        }
+        })
     }
 }
 

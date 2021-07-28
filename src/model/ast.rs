@@ -18,17 +18,14 @@ use aluvm::Isa;
 use amplify::num::u1024;
 use pest::Span;
 
-use crate::issues::Issues;
-
 #[derive(Clone, Hash, Debug)]
 pub struct Program<'i> {
     pub isae: BTreeSet<Isa>,
     pub libs: Libs<'i>,
     pub main: Option<Routine<'i>>,
     pub routines: BTreeMap<String, Routine<'i>>,
-    pub r#const: BTreeMap<String, Const<'i>>,
+    pub consts: BTreeMap<String, Const<'i>>,
     pub input: BTreeMap<String, Var<'i>>,
-    pub issues: Issues<'i>,
 }
 
 #[derive(Clone, Hash, Debug)]

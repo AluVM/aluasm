@@ -4,3 +4,5 @@
 // Designed & written in 2021 by
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
+
+fn main() {}
