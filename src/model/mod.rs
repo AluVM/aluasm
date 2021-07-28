@@ -7,4 +7,4 @@
 
 pub mod ast;
 pub mod issues;
-pub mod obj;
+pub mod module;

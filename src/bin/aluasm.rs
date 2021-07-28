@@ -14,7 +14,7 @@ use std::process::exit;
 
 use aluasm::ast::Program;
 use aluasm::parser::{Parser, Rule};
-use aluasm::{AccessError, LexerError, MainError};
+use aluasm::{BuildError, LexerError, MainError};
 use aluvm::isa::ReservedOp;
 use aluvm::libs::Lib;
 use clap::{AppSettings, Clap};
@@ -69,7 +69,7 @@ fn main() {
 
 fn compile(args: Args) -> Result<(), MainError> {
     let dir = args.output.clone();
-    fs::create_dir_all(dir.clone()).map_err(|err| AccessError::OutputDir {
+    fs::create_dir_all(dir.clone()).map_err(|err| BuildError::OutputDir {
         dir: dir.to_string_lossy().to_string(),
         details: Box::new(err),
     })?;
@@ -96,7 +96,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
                 )
             }
             let dump_file_name = dump_file.to_string_lossy().to_string();
-            File::create(dump_file).map_err(|err| AccessError::DumpFileCreation {
+            File::create(dump_file).map_err(|err| BuildError::DumpFileCreation {
                 file: dump_file_name,
                 details: Box::new(err),
             })
@@ -110,11 +110,11 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     );
 
     let mut s = String::new();
-    let mut fd = File::open(file).map_err(|err| AccessError::FileNotFound {
+    let mut fd = File::open(file).map_err(|err| BuildError::FileNotFound {
         file: file_name.clone(),
         details: Box::new(err),
     })?;
-    fd.read_to_string(&mut s).map_err(|err| AccessError::FileNoAccess {
+    fd.read_to_string(&mut s).map_err(|err| BuildError::FileNoAccess {
         file: file_name.clone(),
         details: Box::new(err),
     })?;
@@ -149,11 +149,11 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     dest.push(file.file_name().unwrap_or_default());
     dest.set_extension("ao");
     let dest_name = dest.to_string_lossy().to_string();
-    let mut fd = File::create(dest).map_err(|err| AccessError::ObjFileCreation {
+    let mut fd = File::create(dest).map_err(|err| BuildError::ObjFileCreation {
         file: dest_name.clone(),
         details: Box::new(err),
     })?;
-    module.write(&mut fd).map_err(|err| AccessError::ObjFileWrite {
+    module.write(&mut fd).map_err(|err| BuildError::ObjFileWrite {
         file: dest_name.clone(),
         details: Box::new(err),
     })?;
@@ -166,7 +166,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     if args.test_lib || args.test_disassemble {
         let lib: Lib<ReservedOp> =
             Lib::with(&module.isae, module.code, module.data, module.libs).map_err(|err| {
-                AccessError::LibraryCreation { file: dest_name.clone(), details: err }
+                BuildError::LibraryCreation { file: dest_name.clone(), details: err }
             })?;
 
         if args.verbose >= 2 {
@@ -176,7 +176,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
 
         if args.test_disassemble {
             let code =
-                lib.disassemble().map_err(|_| AccessError::Disassembling { file: dest_name })?;
+                lib.disassemble().map_err(|_| BuildError::Disassembling { file: dest_name })?;
 
             if args.verbose >= 2 {
                 eprintln!("\x1B[1;33m Printing\x1B[0m module disassemply:");

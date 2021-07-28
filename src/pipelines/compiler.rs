@@ -27,7 +27,7 @@ use rustc_apfloat::ieee;
 
 use crate::ast::{Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement};
 use crate::issues::{self, CompileError, Issues};
-use crate::obj::{Module, Symbols};
+use crate::module::{Module, Symbols};
 use crate::InternalError;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
@@ -75,13 +75,9 @@ impl<'i> Program<'i> {
         let mut issues = Issues::default();
 
         let isae = self.isae.iter().map(Isa::to_string).collect::<Vec<_>>().join(" ");
-        let mut libs_segment = LibSeg::default();
-        self.libs.map.values().any(|id| {
-            libs_segment
-                .add_lib(*id)
-                .map_err(|err| issues.push_error(err.into(), &self.libs.span))
-                .is_err()
-        });
+        let libs_segment = LibSeg::with(self.libs.map.values().copied())
+            .map_err(|err| issues.push_error(err.into(), &self.libs.span))
+            .unwrap_or_default();
         let mut code_segment = ByteStr::default();
         let mut cursor = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
 
@@ -161,7 +157,14 @@ impl<'i> Program<'i> {
         let data = cursor.into_data_segment();
 
         Ok((
-            Module { isae, code: code_segment.to_vec(), data, libs: libs_segment, input, symbols },
+            Module {
+                isae,
+                code: code_segment.to_vec(),
+                data,
+                libs: libs_segment,
+                vars: input,
+                symbols,
+            },
             issues,
         ))
     }

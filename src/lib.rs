@@ -18,8 +18,8 @@ use std::num::ParseIntError;
 
 use aluvm::isa::{BytecodeError, Instr};
 use aluvm::libs::SegmentError;
-use amplify::hex;
-pub use model::{ast, issues, obj};
+use amplify::{hex, IoError};
+pub use model::{ast, issues, module};
 pub use pipelines::{analyzer, compiler, linker, parser};
 use rustc_apfloat::ParseError;
 
@@ -36,7 +36,7 @@ pub enum MainError {
 
     #[display("\x1B[1;31mError:\x1B[0m {0}")]
     #[from]
-    Access(AccessError),
+    Access(BuildError),
 
     #[display(
         "{1}\n\x1B[1;31mError:\x1B[0m could not compile `{0}` due to a previous parsing error"
@@ -312,7 +312,7 @@ impl From<InternalError> for MainError {
 
 #[derive(Debug, Display, Error)]
 #[display(doc_comments)]
-pub enum AccessError {
+pub enum BuildError {
     /// unable to create output directory `{dir}`
     /// \n
     /// details: {details}
@@ -350,4 +350,13 @@ pub enum AccessError {
 
     /// error disassembling file `{file}` since last instruction is incomplete
     Disassembling { file: String },
+
+    /// path `{0}` specified for objects directory (-O | --obj-dir) is not a directory. Try use
+    /// lowercase -o argument if you'd like to specify a single object file
+    ObjDirIsFile(String),
+
+    /// can't access objects directory `{0}`
+    /// \n
+    /// details: {1}
+    ObjDirFail(String, IoError),
 }
