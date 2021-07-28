@@ -12,6 +12,12 @@ categories = ["no-std", "embedded", "compilers", "cryptography", "emulators"]
 readme = "README.md"
 exclude = [".github"]
 
+[[bin]]
+name = "aluasm"
+
+[[bin]]
+name = "alulink"
+
 [dependencies]
 amplify = "3.7"
 aluvm = { version = "0.4", git = "https://github.com/internet2-org/rust-aluvm", features = ["all"] }

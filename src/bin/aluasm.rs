@@ -5,31 +5,16 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
-#[macro_use]
-extern crate pest_derive;
-#[macro_use]
-extern crate amplify;
-
-mod analyzer;
-pub mod ast;
-mod compiler;
-mod issues;
-
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+use aluasm::ast::Program;
+use aluasm::parser::{Parser, Rule};
 use aluvm::isa::ReservedOp;
 use aluvm::libs::Lib;
 use clap::{AppSettings, Clap};
-use pest::Parser;
-
-use crate::ast::Program;
-pub use crate::issues::{Error, Issue, Issues, Warning};
-
-#[derive(Parser)]
-#[grammar = "grammar.pest"]
-pub struct AsmParser;
+use pest::Parser as ParserTrait;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Clap)]
 #[clap(
@@ -53,7 +38,7 @@ fn main() {
 
         let mut s = String::new();
         fd.read_to_string(&mut s).expect("reading file");
-        let pairs = AsmParser::parse(Rule::program, &s).expect("compilation error: ");
+        let pairs = Parser::parse(Rule::program, &s).expect("compilation error: ");
         let program = Program::analyze(pairs.into_iter().next().expect("program not found"));
 
         eprintln!("{}", program.issues);

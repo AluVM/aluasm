@@ -24,80 +24,9 @@ use amplify::num::u1024;
 use pest::Span;
 use rustc_apfloat::ieee;
 
-use crate::ast::{self, FlagSet, Literal, Operand, Operator};
-use crate::{Error, Issues};
-
-pub mod obj {
-    use std::collections::BTreeMap;
-    use std::io::{self, Write};
-
-    use aluvm::data::{FloatLayout, IntLayout, MaybeNumber};
-    use aluvm::libs::LibSeg;
-    use amplify::Wrapper;
-
-    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
-    pub struct Symbols {
-        /// External routine names
-        pub externals: Vec<String>,
-        /// Map of local routine names to code offsets
-        pub routines: BTreeMap<String, u16>,
-    }
-
-    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-    pub enum DataType {
-        String(String),
-        Int(IntLayout, MaybeNumber),
-        Float(FloatLayout, MaybeNumber),
-    }
-
-    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-    pub struct Input {
-        pub name: String,
-        pub details: String,
-        pub data: DataType,
-    }
-
-    #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
-    pub struct Module {
-        pub isae: String,
-        pub code: Vec<u8>,
-        pub data: Vec<u8>,
-        pub libs: LibSeg,
-        pub input: Vec<Input>,
-        pub symbols: Symbols,
-    }
-
-    impl Module {
-        pub fn write(&self, writer: &mut impl Write) -> io::Result<()> {
-            writer.write(self.isae.as_bytes())?;
-            writer.write(&[0u8])?;
-            writer.write(&(self.code.len() as u16).to_le_bytes())?;
-            writer.write(&self.code)?;
-            writer.write(&(self.data.len() as u16).to_le_bytes())?;
-            writer.write(&self.data)?;
-            writer.write(&[self.libs.into_iter().count() as u8])?;
-            for id in &self.libs {
-                writer.write(id.as_inner())?;
-            }
-            // TODO: Control that the number of routines does not exceeds u16::MAX
-            writer.write(&(self.symbols.routines.len() as u16).to_le_bytes())?;
-            for (name, offset) in &self.symbols.routines {
-                // TODO: Control length of routine names
-                writer.write(&[name.len() as u8])?;
-                writer.write(name.as_bytes())?;
-                writer.write(&offset.to_le_bytes())?;
-            }
-            // TODO: Control that the number of external symbols does not exceeds u16::MAX
-            writer.write(&(self.symbols.externals.len() as u16).to_le_bytes())?;
-            for name in &self.symbols.externals {
-                // TODO: Control length of external calls
-                writer.write(&[name.len() as u8])?;
-                writer.write(name.as_bytes())?;
-            }
-            Ok(())
-        }
-    }
-}
+use crate::ast::{Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement};
+use crate::issues::{Error, Issues};
+use crate::obj::{Module, Symbols};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
@@ -136,8 +65,8 @@ impl<'a, 'b> LibFrame<'a, 'b> {
     }
 }
 
-impl<'i> ast::Program<'i> {
-    pub fn compile(&'i self) -> (obj::Module, Issues<'i>) {
+impl<'i> Program<'i> {
+    pub fn compile(&'i self) -> (Module, Issues<'i>) {
         let mut issues = Issues::default();
 
         let isae = self.isae.iter().map(Isa::to_string).collect::<Vec<_>>().join(" ");
@@ -215,7 +144,7 @@ impl<'i> ast::Program<'i> {
         let input = vec![];
         /*
         let input = self.input.values().map(|v| {
-            obj::Input {
+            Input {
                 name: v.name.clone(),
                 details: v.info.clone(),
                 data: match v {
@@ -229,28 +158,21 @@ impl<'i> ast::Program<'i> {
             .iter()
             .filter_map(|(name, map)| Some((name.clone(), *map.first()?)))
             .collect();
-        let symbols = obj::Symbols { externals, routines };
+        let symbols = Symbols { externals, routines };
         let data = cursor.into_data_segment();
 
         (
-            obj::Module {
-                isae,
-                code: code_segment.to_vec(),
-                data,
-                libs: libs_segment,
-                input,
-                symbols,
-            },
+            Module { isae, code: code_segment.to_vec(), data, libs: libs_segment, input, symbols },
             issues,
         )
     }
 }
 
-impl<'i> ast::Routine<'i> {
+impl<'i> Routine<'i> {
     pub fn compile(
         &'i self,
         cursor: &mut (impl Read + Write),
-        program: &'i ast::Program,
+        program: &'i Program,
         frame: &mut LibFrame,
         issues: &mut Issues<'i>,
     ) -> Vec<u16> {
@@ -311,7 +233,7 @@ impl<'i> ast::Routine<'i> {
     }
 }
 
-impl<'i> ast::Statement<'i> {
+impl<'i> Statement<'i> {
     fn reg<T>(&'i self, no: u8, issues: &mut Issues<'i>) -> T
     where
         T: TryFrom<RegAll> + Register,
@@ -425,7 +347,7 @@ impl<'i> ast::Statement<'i> {
         &'i self,
         no: u8,
         reg: impl NumericRegister,
-        consts: &'i BTreeMap<String, ast::Const<'i>>,
+        consts: &'i BTreeMap<String, Const<'i>>,
         issues: &mut Issues<'i>,
     ) -> MaybeNumber {
         let operand = if let Some(operand) = self.operands.get(no as usize) {
@@ -559,7 +481,7 @@ impl<'i> ast::Statement<'i> {
     fn lib(
         &'i self,
         no: u8,
-        program: &'i ast::Program,
+        program: &'i Program,
         frame: &mut LibFrame,
         issues: &mut Issues<'i>,
     ) -> LibSite {
@@ -607,7 +529,7 @@ impl<'i> ast::Statement<'i> {
 
     pub fn compile(
         &'i self,
-        program: &'i ast::Program,
+        program: &'i Program,
         frame: &mut LibFrame,
         issues: &mut Issues<'i>,
     ) -> Instr {

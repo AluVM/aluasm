@@ -22,7 +22,8 @@ use pest::iterators::Pair;
 use crate::ast::{
     Const, FlagSet, IntBase, Libs, Literal, Operand, Operator, Program, Routine, Statement, Var,
 };
-use crate::{Error, Issues, Rule, Warning};
+use crate::issues::{Error, Issues, Warning};
+use crate::parser::Rule;
 
 impl<'i> Program<'i> {
     pub fn analyze(pair: Pair<'i, Rule>) -> Self {

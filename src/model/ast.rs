@@ -18,7 +18,7 @@ use aluvm::Isa;
 use amplify::num::u1024;
 use pest::Span;
 
-use crate::Issues;
+use crate::issues::Issues;
 
 #[derive(Clone, Hash, Debug)]
 pub struct Program<'i> {
