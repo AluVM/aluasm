@@ -24,6 +24,7 @@ pub use pipelines::{analyzer, compiler, linker, parser};
 use rustc_apfloat::ParseError;
 
 use crate::issues::Src;
+use crate::module::ModuleError;
 use crate::parser::Rule;
 
 #[derive(Debug, Display, Error, From)]
@@ -54,6 +55,12 @@ pub enum MainError {
          previous error(s); {2} warning(s) emitted"
     )]
     Compile(String, usize, usize, String),
+
+    #[display(
+        "\x1B[1;31mError:\x1B[0m {0}\n\n\x1B[1;31mError:\x1B[0m failing due to broken binary data \
+         in module `{1}` "
+    )]
+    Module(ModuleError, String),
 
     #[display(
         "{3}\n\x1B[1;31mError:\x1B[0m could not link `{0}` due to {1} previous error(s); {2} \

@@ -5,7 +5,9 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
+use std::ffi::OsStr;
 use std::fs;
+use std::fs::File;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -65,4 +67,20 @@ fn read_all_objects(args: Args) -> Result<Vec<Module>, MainError> {
     Ok(vec)
 }
 
-fn read_object(path: PathBuf, args: &Args) -> Result<Module, MainError> { todo!() }
+fn read_object(path: PathBuf, _args: &Args) -> Result<Module, MainError> {
+    let file_name =
+        path.file_name().unwrap_or(OsStr::new("<noname>")).to_string_lossy().to_string();
+
+    eprintln!(
+        "\x1B[1;32m  Loading\x1B[0m {} ({})",
+        file_name,
+        path.canonicalize().unwrap_or_default().display()
+    );
+
+    let fd = File::open(path).map_err(|err| BuildError::FileNotFound {
+        file: file_name.clone(),
+        details: Box::new(err),
+    })?;
+
+    Module::read(fd).map_err(|err| MainError::Module(err, file_name))
+}

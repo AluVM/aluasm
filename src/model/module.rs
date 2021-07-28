@@ -12,6 +12,7 @@ use std::string::FromUtf8Error;
 use aluvm::data::{FloatLayout, IntLayout, MaybeNumber, Number, NumberLayout};
 use aluvm::libs::constants::ISAE_SEGMENT_MAX_LEN;
 use aluvm::libs::{LibId, LibSeg, LibSegOverflow};
+use amplify::hex::ToHex;
 use amplify::{IoError, Wrapper};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
@@ -92,7 +93,7 @@ pub enum ModuleError {
 }
 
 impl Module {
-    pub fn read(reader: &mut impl Read) -> Result<Module, ModuleError> {
+    pub fn read(mut reader: impl Read) -> Result<Module, ModuleError> {
         let mut byte = [0u8; 1];
         let mut word = [0u8; 2];
 
@@ -128,10 +129,9 @@ impl Module {
         }
         let libs = LibSeg::with(libs.into_iter())?;
 
-        reader.read_exact(&mut word)?;
-        let len = u16::from_le_bytes(word);
+        reader.read_exact(&mut byte)?;
         let mut vars = Vec::with_capacity(byte[0] as usize);
-        for _ in 0..len {
+        for _ in 0..byte[0] {
             reader.read_exact(&mut byte)?;
             let mut info = vec![0u8; byte[0] as usize];
             reader.read_exact(&mut info)?;
@@ -214,9 +214,10 @@ impl Module {
             vars.push(v);
         }
 
-        reader.read_exact(&mut byte)?;
+        reader.read_exact(&mut word)?;
+        let len = u16::from_le_bytes(word);
         let mut routines = BTreeMap::new();
-        for _ in 0..byte[0] {
+        for _ in 0..len {
             reader.read_exact(&mut byte)?;
             let mut name = vec![0u8; byte[0] as usize];
             reader.read_exact(&mut name)?;
@@ -227,9 +228,10 @@ impl Module {
             routines.insert(name, offset);
         }
 
-        reader.read_exact(&mut byte)?;
+        reader.read_exact(&mut word)?;
+        let len = u16::from_le_bytes(word);
         let mut externals = Vec::with_capacity(byte[0] as usize);
-        for _ in 0..byte[0] {
+        for _ in 0..len {
             reader.read_exact(&mut byte)?;
             let mut name = vec![0u8; byte[0] as usize];
             reader.read_exact(&mut name)?;
@@ -240,7 +242,7 @@ impl Module {
         Ok(Module { isae, code, data, libs, vars, symbols: Symbols { externals, routines } })
     }
 
-    pub fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+    pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
         writer.write(self.isae.as_bytes())?;
         writer.write(&[0u8])?;
         writer.write(&(self.code.len() as u16).to_le_bytes())?;
