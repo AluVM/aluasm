@@ -218,8 +218,9 @@ impl Issue for CompileError {
                 CallTableError::TooManyRoutines => 4020,
                 CallTableError::LibTableNotFound(_) => 4021,
                 CallTableError::RoutineNotFound(_, _) => 4022,
+                CallTableError::TooManyLibs => 4023,
             },
-            CompileError::RoutineUnknown(_) => 4023,
+            CompileError::RoutineUnknown(_) => 4024,
         }
     }
 

@@ -10,9 +10,9 @@ use std::io::{self, Read, Write};
 use std::string::FromUtf8Error;
 use std::vec::IntoIter;
 
-use aluvm::data::encoding::{Encode, EncodeError};
+use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenByte, MaxLenWord};
 use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber, Number, NumberLayout};
-use aluvm::libs::constants::ISAE_SEGMENT_MAX_LEN;
+use aluvm::libs::constants::{ISAE_SEGMENT_MAX_LEN, LIBS_SEGMENT_MAX_COUNT};
 use aluvm::libs::{LibId, LibSeg, LibSegOverflow, LibSite};
 use amplify::IoError;
 
@@ -30,6 +30,9 @@ pub enum CallTableError {
 
     /// number of external routine calls exceeds maximal number of jumps allowed by VM's `cy0`
     TooManyRoutines,
+
+    /// number of external libraries exceeds maximum
+    TooManyLibs,
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
@@ -53,6 +56,9 @@ impl CallTable {
     pub fn find_or_insert(&mut self, id: LibId, routine: &str) -> Result<u16, CallTableError> {
         if self.0.len() >= u16::MAX as usize {
             return Err(CallTableError::TooManyRoutines);
+        }
+        if self.0.len() >= LIBS_SEGMENT_MAX_COUNT {
+            return Err(CallTableError::TooManyLibs);
         }
         let vec = self.0.entry(id).or_default();
         let pos =
@@ -174,11 +180,101 @@ impl Encode for DataType {
     }
 }
 
+impl Decode for DataType {
+    type Error = DecodeError;
+
+    fn decode(mut reader: impl Read) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        Ok(match u8::decode(&mut reader)? {
+            0xFF => {
+                let data: Vec<u8> = MaxLenWord::decode(&mut reader)?.release();
+                let inner = if data.is_empty() { None } else { Some(data) };
+                DataType::ByteStr(inner)
+            }
+
+            i if i <= 1 => DataType::Int(
+                IntLayout { signed: i == 1, bytes: u16::decode(&mut reader)? },
+                MaybeNumber::decode(&mut reader)?,
+            ),
+
+            f => DataType::Float(
+                FloatLayout::with(f).ok_or(DecodeError::FloatLayout(f))?,
+                MaybeNumber::decode(&mut reader)?,
+            ),
+        })
+    }
+}
+
 impl Encode for Variable {
     type Error = EncodeError;
 
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
         Ok(self.info.encode(&mut writer)? + self.data.encode(&mut writer)?)
+    }
+}
+
+impl Decode for Variable {
+    type Error = DecodeError;
+
+    fn decode(mut reader: impl Read) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        Ok(Variable { info: Decode::decode(&mut reader)?, data: Decode::decode(&mut reader)? })
+    }
+}
+
+impl Encode for CallRef {
+    type Error = EncodeError;
+
+    fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
+        Ok(self.routine.encode(&mut writer)? + MaxLenWord::new(&self.sites).encode(&mut writer)?)
+    }
+}
+
+impl Decode for CallRef {
+    type Error = DecodeError;
+
+    fn decode(mut reader: impl Read) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        Ok(CallRef {
+            routine: Decode::decode(&mut reader)?,
+            sites: MaxLenWord::decode(&mut reader)?.release(),
+        })
+    }
+}
+
+impl Encode for CallTable {
+    type Error = EncodeError;
+
+    fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
+        let len = self.0.len() as u8;
+        let mut count = len.encode(&mut writer)?;
+        for (lib, map) in &self.0 {
+            count += lib.encode(&mut writer)?;
+            count += MaxLenWord::new(map).encode(&mut writer)?;
+        }
+        Ok(count)
+    }
+}
+
+impl Decode for CallTable {
+    type Error = DecodeError;
+
+    fn decode(mut reader: impl Read) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        let len = u8::decode(&mut reader)?;
+        let mut table = bmap! {};
+        for _ in 0..len {
+            table.insert(LibId::decode(&mut reader)?, MaxLenWord::decode(&mut reader)?.release());
+        }
+        Ok(CallTable(table))
     }
 }
 
