@@ -8,7 +8,7 @@
 use std::fmt::{self, Debug, Display, Formatter, Write};
 
 use aluvm::isa::{BytecodeError, ParseFlagError};
-use aluvm::libs::{LibIdError, LibSegOverflow, WriteError};
+use aluvm::libs::{LibId, LibIdError, LibSegOverflow, WriteError};
 use aluvm::reg::RegBlock;
 use aluvm::Isa;
 use pest::iterators::Pair;
@@ -150,24 +150,39 @@ pub enum CompileError {
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
-pub enum LinkingError {}
+pub enum LinkingError {
+    /// building binary requires `.MAIN` routine to be present in the object file
+    BinaryNoMain,
+
+    /// library {0} which routines are used by `{1}` module was not found; consider adding more
+    /// -L=path or -l=libname arguments
+    LibraryAbsent(LibId, String),
+
+    /// library {libid} does not contain routine `{routine}` routine called from `{module}`
+    /// module
+    LibraryNoRoutine { libid: LibId, routine: String, module: String },
+
+    /// none of the provided object files contains `{routine}` routine which is called from
+    /// `{module}` module; consider adding more -O=path or -o=obj_file arguments
+    ModulesNoRoutine { routine: String, module: String },
+}
 
 impl Issue for SyntaxError {
     fn errno(&self) -> u16 {
         match self {
-            SyntaxError::RoutineNameReuse(_) => 1,
-            SyntaxError::UnknownMnemonic(_) => 2,
-            SyntaxError::RepeatedLabel { .. } => 3,
-            SyntaxError::WrongRegister { .. } => 4,
-            SyntaxError::TooManyFlags(_) => 5,
-            SyntaxError::TooBigInt(_) => 6,
-            SyntaxError::InvalidCharLiteral(_) => 7,
-            SyntaxError::UnknownIsa(_) => 8,
-            SyntaxError::RegisterIndexOutOfRange(_) => 9,
-            SyntaxError::RepeatedLibName(_) => 11,
-            SyntaxError::WrongLibId(_, _) => 12,
-            SyntaxError::RepeatedConstName(_) => 13,
-            SyntaxError::RepeatedVarName(_) => 14,
+            SyntaxError::RoutineNameReuse(_) => 2001,
+            SyntaxError::UnknownMnemonic(_) => 2002,
+            SyntaxError::RepeatedLabel { .. } => 2003,
+            SyntaxError::WrongRegister { .. } => 2004,
+            SyntaxError::TooManyFlags(_) => 2005,
+            SyntaxError::TooBigInt(_) => 2006,
+            SyntaxError::InvalidCharLiteral(_) => 2007,
+            SyntaxError::UnknownIsa(_) => 2008,
+            SyntaxError::RegisterIndexOutOfRange(_) => 2009,
+            SyntaxError::RepeatedLibName(_) => 2011,
+            SyntaxError::WrongLibId(_, _) => 2012,
+            SyntaxError::RepeatedConstName(_) => 2013,
+            SyntaxError::RepeatedVarName(_) => 2014,
         }
     }
 
@@ -178,31 +193,31 @@ impl Issue for SyntaxError {
 impl Issue for CompileError {
     fn errno(&self) -> u16 {
         match self {
-            CompileError::OperandWrongType { .. } => 15,
-            CompileError::OperandWrongReg { .. } => 16,
-            CompileError::OperandMissed { .. } => 17,
-            CompileError::OperatorWrongFlag(..) => 18,
-            CompileError::OperatorRequiresFlag(..) => 19,
+            CompileError::OperandWrongType { .. } => 4001,
+            CompileError::OperandWrongReg { .. } => 4002,
+            CompileError::OperandMissed { .. } => 4003,
+            CompileError::OperatorWrongFlag(..) => 4004,
+            CompileError::OperatorRequiresFlag(..) => 4005,
             CompileError::FlagError(err) => match err {
-                ParseFlagError::UnknownFlag(_, _) => 20,
-                ParseFlagError::UnknownFlags(_, _) => 21,
-                ParseFlagError::MutuallyExclusiveFlags(_, _, _) => 22,
-                ParseFlagError::RequiredFlagAbsent(_) => 23,
-                ParseFlagError::DuplicatedFlags(_, _) => 24,
+                ParseFlagError::UnknownFlag(_, _) => 4006,
+                ParseFlagError::UnknownFlags(_, _) => 4007,
+                ParseFlagError::MutuallyExclusiveFlags(_, _, _) => 4008,
+                ParseFlagError::RequiredFlagAbsent(_) => 4009,
+                ParseFlagError::DuplicatedFlags(_, _) => 4010,
             },
-            CompileError::OperandRegMutBeEqual(_) => 29,
-            CompileError::CodeLengthOverflow => 25,
-            CompileError::DataLengthOverflow => 26,
-            CompileError::LibsLengthOverflow => 27,
-            CompileError::StepTooLarge(_) => 28,
-            CompileError::ConstUnknown(_) => 30,
-            CompileError::ConstWrongType { .. } => 31,
-            CompileError::LibUnknown(_) => 32,
+            CompileError::OperandRegMutBeEqual(_) => 4011,
+            CompileError::CodeLengthOverflow => 4012,
+            CompileError::DataLengthOverflow => 4013,
+            CompileError::LibsLengthOverflow => 4014,
+            CompileError::StepTooLarge(_) => 4015,
+            CompileError::ConstUnknown(_) => 4016,
+            CompileError::ConstWrongType { .. } => 4017,
+            CompileError::LibUnknown(_) => 4018,
             CompileError::LibError(err) => match err {
-                LibError::LibNotFound(_, _) => 33,
-                LibError::TooManyRoutines => 34,
+                LibError::LibNotFound(_, _) => 4019,
+                LibError::TooManyRoutines => 4020,
             },
-            CompileError::RoutineUnknown(_) => 35,
+            CompileError::RoutineUnknown(_) => 4021,
         }
     }
 
@@ -211,7 +226,15 @@ impl Issue for CompileError {
 }
 
 impl Issue for LinkingError {
-    fn errno(&self) -> u16 { 0 }
+    fn errno(&self) -> u16 {
+        match self {
+            LinkingError::BinaryNoMain => 8001,
+            LinkingError::LibraryAbsent(_, _) => 8003,
+            LinkingError::LibraryNoRoutine { .. } => 8004,
+            LinkingError::ModulesNoRoutine { .. } => 8005,
+            // continue from 8007
+        }
+    }
 
     #[inline]
     fn is_error(&self) -> bool { true }
@@ -242,14 +265,21 @@ pub enum SyntaxWarning {
 #[display(doc_comments)]
 pub enum CompileWarning {}
 
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
-pub enum LinkingWarning {}
+pub enum LinkingWarning {
+    /// building library from an object file containing `.MAIN` routine; consider building binary
+    /// by using --bin option
+    LibraryWithMain,
+
+    /// library {0} is not used anywhere in the code
+    LibraryNotUsed(LibId),
+}
 
 impl Issue for SyntaxWarning {
     fn errno(&self) -> u16 {
         match self {
-            SyntaxWarning::DuplicatedIsa(_) => 10,
+            SyntaxWarning::DuplicatedIsa(_) => 2010,
         }
     }
 
@@ -265,7 +295,12 @@ impl Issue for CompileWarning {
 }
 
 impl Issue for LinkingWarning {
-    fn errno(&self) -> u16 { 0 }
+    fn errno(&self) -> u16 {
+        match self {
+            LinkingWarning::LibraryWithMain => 8002,
+            LinkingWarning::LibraryNotUsed(_) => 8006,
+        }
+    }
 
     #[inline]
     fn is_error(&self) -> bool { false }
@@ -276,8 +311,8 @@ pub struct Issues<'i, S>
 where
     S: Stage,
 {
-    errors: Vec<(S::Error, Src<'i>)>,
-    warnings: Vec<(S::Warning, Src<'i>)>,
+    errors: Vec<(S::Error, Option<Src<'i>>)>,
+    warnings: Vec<(S::Warning, Option<Src<'i>>)>,
 }
 
 impl<'i, S> Default for Issues<'i, S>
@@ -293,7 +328,7 @@ where
     S: Stage,
 {
     fn fmt<'f>(&self, f: &mut Formatter<'f>) -> fmt::Result {
-        fn _f(f: &mut Formatter<'_>, issue: &impl Issue, src: &Src) -> fmt::Result {
+        fn _f(f: &mut Formatter<'_>, issue: &impl Issue, src: &Option<Src>) -> fmt::Result {
             write!(
                 f,
                 "{} E{:04}:\x1B[0m \x1B[1;15m{}\x1B[0m",
@@ -301,7 +336,10 @@ where
                 issue.errno(),
                 issue
             )?;
-            Display::fmt(src, f)
+            if let Some(src) = src {
+                Display::fmt(src, f)?;
+            }
+            Ok(())
         }
 
         for (error, src) in &self.errors {
@@ -321,10 +359,14 @@ where
     S: Stage,
 {
     pub fn push_error(&mut self, error: S::Error, span: &impl ToSrc<'i>) {
-        self.errors.push((error, span.to_src()));
+        self.errors.push((error, Some(span.to_src())));
     }
     pub fn push_warning(&mut self, warning: S::Warning, span: &impl ToSrc<'i>) {
-        self.warnings.push((warning, span.to_src()));
+        self.warnings.push((warning, Some(span.to_src())));
+    }
+    pub fn push_error_nospan(&mut self, error: S::Error) { self.errors.push((error, None)); }
+    pub fn push_warning_nospan(&mut self, warning: S::Warning) {
+        self.warnings.push((warning, None));
     }
     pub fn has_errors(&self) -> bool { !self.errors.is_empty() }
     pub fn count_errors(&self) -> usize { self.errors.len() }

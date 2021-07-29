@@ -58,16 +58,14 @@ pub struct Args {
 
 fn main() {
     let args = Args::parse();
-    match compile(args) {
-        Ok(_) => exit(0),
-        Err(err) => {
-            eprintln!("{}", err);
-            exit(1)
-        }
-    }
+    compile(&args).unwrap_or_else(|| {
+        eprintln!("{}", err);
+        exit(1)
+    });
+    eprintln!("\x1B[1;32m Finished\x1B[0m successfully");
 }
 
-fn compile(args: Args) -> Result<(), MainError> {
+fn compile(args: &Args) -> Result<(), MainError> {
     let dir = args.output.clone();
     fs::create_dir_all(dir.clone()).map_err(|err| BuildError::OutputDir {
         dir: dir.to_string_lossy().to_string(),

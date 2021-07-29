@@ -12,7 +12,6 @@ use std::string::FromUtf8Error;
 use aluvm::data::{FloatLayout, IntLayout, MaybeNumber, Number, NumberLayout};
 use aluvm::libs::constants::ISAE_SEGMENT_MAX_LEN;
 use aluvm::libs::{LibId, LibSeg, LibSegOverflow};
-use amplify::hex::ToHex;
 use amplify::{IoError, Wrapper};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]

@@ -5,7 +5,6 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
-use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
@@ -31,23 +30,73 @@ pub struct Args {
     #[clap(short, long, global = true, parse(from_occurrences))]
     pub verbose: u8,
 
-    /// Build directory with object files
-    #[clap(short = 'O', long, global = true, default_value = "./build/objects")]
+    /// Output executable binary
+    #[clap(long, global = true, conflicts_with = "lib")]
+    pub bin: bool,
+
+    /// Output library (default)
+    #[clap(long, global = true)]
+    pub lib: bool,
+
+    /// Build directory with object files. Defaults to `{build-dir}/objects}` (see --build-dir
+    /// argument)
+    #[clap(short = 'O', long, global = true, default_value = "${ALU_BUILD_DIR}/objects")]
     pub obj_dir: PathBuf,
+
+    /// Directory containing library files. Defaults to `{build-dir}/libs}` (see --build-dir
+    /// argument)
+    #[clap(short = 'L', long, global = true, default_value = "${ALU_BUILD_DIR}/libs")]
+    pub lib_dir: PathBuf,
+
+    /// Adds specific library
+    #[clap(short = 'l', global = true)]
+    pub libs: Vec<PathBuf>,
+
+    /// Path to a directory used for building process
+    #[clap(short = 'B', long, global = true, default_value = "./build/")]
+    pub build_dir: PathBuf,
+
+    /// Object file to link
+    #[clap(required = true)]
+    pub file: PathBuf,
 }
 
 fn main() {
     let args = Args::parse();
-    match read_all_objects(args) {
-        Ok(_) => exit(0),
-        Err(err) => {
-            eprintln!("{}", err);
-            exit(1)
-        }
-    }
+    link(&args).unwrap_or_else(|err| {
+        eprintln!("{}", err);
+        exit(1)
+    });
+    eprintln!("\x1B[1;32m Finished\x1B[0m successfully");
 }
 
-fn read_all_objects(args: Args) -> Result<Vec<Module>, MainError> {
+fn link(args: &Args) -> Result<(), MainError> {
+    let product_name = args
+        .file
+        .file_name()
+        .ok_or(BuildError::NotFile(args.file.to_string_lossy().to_string()))?
+        .to_string_lossy()
+        .to_string();
+    eprintln!("\x1B[1;32m  Linking\x1B[0m {}", product_name,);
+
+    let module = read_object(&args.file, &args)?;
+
+    let (product, issues) = if args.bin { module.link_bin()? } else { module.link_lib()? };
+
+    if issues.has_errors() {
+        return Err(MainError::Linking(
+            product_name,
+            issues.count_errors(),
+            issues.count_warnings(),
+            issues.to_string(),
+        ));
+    }
+    eprintln!("{}", issues);
+
+    Ok(())
+}
+
+fn read_all_objects(args: &Args) -> Result<Vec<Module>, MainError> {
     let obj_dir = args.obj_dir.to_string_lossy().to_string();
     if args.obj_dir.is_file() {
         Err(BuildError::ObjDirIsFile(obj_dir.clone()))?;
@@ -61,15 +110,18 @@ fn read_all_objects(args: Args) -> Result<Vec<Module>, MainError> {
         if path.is_dir() {
             continue;
         }
-        vec.push(read_object(path, &args)?);
+        vec.push(read_object(&path, &args)?);
     }
 
     Ok(vec)
 }
 
-fn read_object(path: PathBuf, _args: &Args) -> Result<Module, MainError> {
-    let file_name =
-        path.file_name().unwrap_or(OsStr::new("<noname>")).to_string_lossy().to_string();
+fn read_object(path: &PathBuf, _args: &Args) -> Result<Module, MainError> {
+    let file_name = path
+        .file_name()
+        .ok_or(BuildError::NotFile(path.to_string_lossy().to_string()))?
+        .to_string_lossy()
+        .to_string();
 
     eprintln!(
         "\x1B[1;32m  Loading\x1B[0m {} ({})",

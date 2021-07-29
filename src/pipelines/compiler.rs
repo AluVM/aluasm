@@ -28,7 +28,7 @@ use rustc_apfloat::ieee;
 use crate::ast::{Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement};
 use crate::issues::{self, CompileError, Issues};
 use crate::module::{Module, Symbols};
-use crate::InternalError;
+use crate::CompilerError;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
@@ -71,7 +71,7 @@ impl<'i> Program<'i> {
     pub fn compile(
         &'i self,
         dump: &mut Option<File>,
-    ) -> Result<(Module, Issues<'i, issues::Compile>), InternalError> {
+    ) -> Result<(Module, Issues<'i, issues::Compile>), CompilerError> {
         let mut issues = Issues::default();
 
         let isae = self.isae.iter().map(Isa::to_string).collect::<Vec<_>>().join(" ");
@@ -102,9 +102,9 @@ impl<'i> Program<'i> {
         for routine in self.routines.values() {
             let map = routine_map
                 .get(&routine.name)
-                .ok_or_else(|| InternalError::RoutineMissed(routine.name.clone()))?;
+                .ok_or_else(|| CompilerError::RoutineMissed(routine.name.clone()))?;
             let start =
-                *map.first().ok_or_else(|| InternalError::RoutineEmpty(routine.name.clone()))?;
+                *map.first().ok_or_else(|| CompilerError::RoutineEmpty(routine.name.clone()))?;
             for (offset, statement) in routine.statements.iter().enumerate() {
                 if statement.operator.0 == Operator::routine {
                     let (routine_name, span) = match statement.routine(0, &mut issues) {
@@ -119,18 +119,18 @@ impl<'i> Program<'i> {
                         }
                     };
                     let pos =
-                        *posmap.first().ok_or_else(|| InternalError::RoutineEmpty(routine_name))?;
+                        *posmap.first().ok_or_else(|| CompilerError::RoutineEmpty(routine_name))?;
                     let seek = start + map[offset];
                     cursor.seek(Some(seek));
                     let mut instr = Instr::<ReservedOp>::read(&mut cursor)
-                        .map_err(|_| InternalError::InstrRead(seek))?;
+                        .map_err(|_| CompilerError::InstrRead(seek))?;
                     let to = match instr {
                         Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) => to,
-                        other => return Err(InternalError::InstrChanged(seek, "routine", other)),
+                        other => return Err(CompilerError::InstrChanged(seek, "routine", other)),
                     };
                     *to = pos;
                     cursor.seek(Some(seek));
-                    instr.write(&mut cursor).map_err(|err| InternalError::InstrWrite(seek, err))?;
+                    instr.write(&mut cursor).map_err(|err| CompilerError::InstrWrite(seek, err))?;
                 }
             }
         }
@@ -178,7 +178,7 @@ impl<'i> Routine<'i> {
         frame: &mut LibFrame,
         dump: &mut Option<File>,
         issues: &mut Issues<'i, issues::Compile>,
-    ) -> Result<Vec<u16>, InternalError> {
+    ) -> Result<Vec<u16>, CompilerError> {
         let mut instr_map = Vec::with_capacity(self.statements.len());
         let mut jump_map = bmap![];
 
@@ -226,15 +226,15 @@ impl<'i> Routine<'i> {
         for (from, to) in jump_map {
             cursor.seek(Some(from));
             let mut instr =
-                Instr::<ReservedOp>::read(cursor).map_err(|_| InternalError::InstrRead(from))?;
+                Instr::<ReservedOp>::read(cursor).map_err(|_| CompilerError::InstrRead(from))?;
             let pos = match instr {
                 Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
                 | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) => pos,
-                other => return Err(InternalError::InstrChanged(from, "jump", other)),
+                other => return Err(CompilerError::InstrChanged(from, "jump", other)),
             };
             *pos = instr_map[to as usize];
             cursor.seek(Some(from));
-            instr.write(cursor).map_err(|err| InternalError::InstrWrite(from, err))?;
+            instr.write(cursor).map_err(|err| CompilerError::InstrWrite(from, err))?;
         }
 
         cursor.seek(end);
@@ -359,7 +359,7 @@ impl<'i> Statement<'i> {
         reg: impl NumericRegister,
         consts: &'i BTreeMap<String, Const<'i>>,
         issues: &mut Issues<'i, issues::Compile>,
-    ) -> Result<MaybeNumber, InternalError> {
+    ) -> Result<MaybeNumber, CompilerError> {
         let operand = if let Some(operand) = self.operands.get(no as usize) {
             operand
         } else {
@@ -378,7 +378,7 @@ impl<'i> Statement<'i> {
             Operand::Lit(Literal::Int(val, _), _) => MaybeNumber::from(val),
             Operand::Lit(Literal::Float(i, r, e), _) => MaybeNumber::from(
                 ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e))
-                    .map_err(|err| InternalError::FloatConstruction(*i, *r, *e, err))?,
+                    .map_err(|err| CompilerError::FloatConstruction(*i, *r, *e, err))?,
             ),
             Operand::Const(name, span) => {
                 let val = match consts.get(name) {
@@ -392,7 +392,7 @@ impl<'i> Statement<'i> {
                     Literal::Int(val, _) => MaybeNumber::from(val),
                     Literal::Float(i, r, e) => MaybeNumber::from(
                         ieee::Quad::from_str(&format!("{}.{}e{}", i, r, e))
-                            .map_err(|err| InternalError::FloatConstruction(*i, *r, *e, err))?,
+                            .map_err(|err| CompilerError::FloatConstruction(*i, *r, *e, err))?,
                     ),
                     lit => {
                         issues.push_error(
@@ -547,7 +547,7 @@ impl<'i> Statement<'i> {
         program: &'i Program,
         frame: &mut LibFrame,
         issues: &mut Issues<'i, issues::Compile>,
-    ) -> Result<Instr, InternalError> {
+    ) -> Result<Instr, CompilerError> {
         macro_rules! reg {
             ($no:expr) => {
                 self.reg($no, issues)

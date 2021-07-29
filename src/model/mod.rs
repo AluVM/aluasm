@@ -8,3 +8,4 @@
 pub mod ast;
 pub mod issues;
 pub mod module;
+pub mod product;

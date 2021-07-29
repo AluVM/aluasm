@@ -19,7 +19,7 @@ use std::num::ParseIntError;
 use aluvm::isa::{BytecodeError, Instr};
 use aluvm::libs::SegmentError;
 use amplify::{hex, IoError};
-pub use model::{ast, issues, module};
+pub use model::{ast, issues, module, product};
 pub use pipelines::{analyzer, compiler, linker, parser};
 use rustc_apfloat::ParseError;
 
@@ -29,15 +29,18 @@ use crate::parser::Rule;
 
 #[derive(Debug, Display, Error, From)]
 pub enum MainError {
-    #[display("\x1B[1;31mInternal lexer error L{1:04}:\x1B[0m {0}")]
+    #[display("\x1B[1;31mInternal lexer error X{1:04}:\x1B[0m {0}")]
     Lexer(String, u16),
 
     #[display("\x1B[1;31mInternal compiler error C{1:04}:\x1B[0m {0}")]
-    Internal(InternalError, u16),
+    Compiler(CompilerError, u16),
+
+    #[display("\x1B[1;31mInternal linker error L{1:04}:\x1B[0m {0}")]
+    Linker(LinkerError, u16),
 
     #[display("\x1B[1;31mError:\x1B[0m {0}")]
     #[from]
-    Access(BuildError),
+    Build(BuildError),
 
     #[display(
         "{1}\n\x1B[1;31mError:\x1B[0m could not compile `{0}` due to a previous parsing error"
@@ -272,7 +275,7 @@ impl<'i> LexerError<'i> {
 
 #[derive(Clone, Eq, PartialEq, Debug, Display, Error)]
 #[display(doc_comments)]
-pub enum InternalError {
+pub enum CompilerError {
     /// routine `{0}` is absent in the list of routines
     RoutineMissed(String),
 
@@ -296,24 +299,40 @@ pub enum InternalError {
     FloatConstruction(u128, u128, u16, ParseError),
 }
 
-impl InternalError {
+impl CompilerError {
     pub fn errno(&self) -> u16 {
         match self {
-            InternalError::RoutineMissed(_) => 1,
-            InternalError::RoutineEmpty(_) => 2,
-            InternalError::InstrRead(_) => 3,
-            InternalError::InstrChanged(_, _, _) => 4,
-            InternalError::InstrWrite(_, _) => 5,
-            InternalError::FloatConstruction(_, _, _, _) => 6,
+            CompilerError::RoutineMissed(_) => 1,
+            CompilerError::RoutineEmpty(_) => 2,
+            CompilerError::InstrRead(_) => 3,
+            CompilerError::InstrChanged(_, _, _) => 4,
+            CompilerError::InstrWrite(_, _) => 5,
+            CompilerError::FloatConstruction(_, _, _, _) => 6,
         }
     }
 }
 
-impl From<InternalError> for MainError {
+impl From<CompilerError> for MainError {
     #[inline]
-    fn from(err: InternalError) -> Self {
+    fn from(err: CompilerError) -> Self {
         let no = err.errno();
-        MainError::Internal(err, no)
+        MainError::Compiler(err, no)
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error)]
+#[display(doc_comments)]
+pub enum LinkerError {}
+
+impl LinkerError {
+    pub fn errno(&self) -> u16 { 0 }
+}
+
+impl From<LinkerError> for MainError {
+    #[inline]
+    fn from(err: LinkerError) -> Self {
+        let no = err.errno();
+        MainError::Linker(err, no)
     }
 }
 
@@ -324,6 +343,9 @@ pub enum BuildError {
     /// \n
     /// details: {details}
     OutputDir { dir: String, details: Box<dyn Error> },
+
+    /// `{0}` provided as one o the arguments is not a file
+    NotFile(String),
 
     /// no file named `{file}`
     /// \n
