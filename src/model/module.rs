@@ -5,21 +5,62 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read, Write};
 use std::string::FromUtf8Error;
 
 use aluvm::data::{FloatLayout, IntLayout, MaybeNumber, Number, NumberLayout};
 use aluvm::libs::constants::ISAE_SEGMENT_MAX_LEN;
-use aluvm::libs::{LibId, LibSeg, LibSegOverflow};
-use amplify::{IoError, Wrapper};
+use aluvm::libs::{LibId, LibSeg, LibSegOverflow, LibSite};
+use amplify::IoError;
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
+#[display(doc_comments)]
+pub enum CallTableError {
+    /// library `{0}` is not found
+    LibNotFound(LibId),
+
+    /// call table for library `{0}` is not found
+    LibTableNotFound(LibId),
+
+    /// routine reference #`{1}` entry in library `{0}` call table is not found
+    RoutineNotFound(LibId, u16),
+
+    /// number of external routine calls exceeds maximal number of jumps allowed by VM's `cy0`
+    TooManyRoutines,
+}
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
-pub struct Symbols {
-    /// External routine names
-    pub externals: Vec<String>,
-    /// Map of local routine names to code offsets
-    pub routines: BTreeMap<String, u16>,
+pub struct CallRef {
+    pub routine: String,
+    pub sites: BTreeSet<u16>,
+}
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
+pub struct CallTable(BTreeMap<LibId, Vec<CallRef>>);
+
+impl CallTable {
+    pub fn get_mut(&mut self, site: LibSite) -> Result<&mut CallRef, CallTableError> {
+        self.0
+            .get_mut(&site.lib)
+            .ok_or(CallTableError::LibTableNotFound(site.lib))?
+            .get_mut(site.pos as usize)
+            .ok_or(CallTableError::RoutineNotFound(site.lib, site.pos))
+    }
+
+    pub fn find_or_insert(&mut self, id: LibId, routine: &str) -> Result<u16, CallTableError> {
+        if self.0.len() >= u16::MAX as usize {
+            return Err(CallTableError::TooManyRoutines);
+        }
+        let vec = self.0.entry(id).or_default();
+        let pos =
+            vec.iter_mut().position(|callref| callref.routine == routine).unwrap_or_else(|| {
+                let callref = CallRef { routine: routine.to_owned(), sites: bset![] };
+                vec.push(callref);
+                vec.len() - 1
+            });
+        Ok(pos as u16)
+    }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
@@ -42,7 +83,9 @@ pub struct Module {
     pub data: Vec<u8>,
     pub libs: LibSeg,
     pub vars: Vec<Variable>,
-    pub symbols: Symbols,
+    pub imports: CallTable,
+    /// Map of local routine names to code offsets
+    pub exports: BTreeMap<String, u16>,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Display, Error, From)]
@@ -215,7 +258,7 @@ impl Module {
 
         reader.read_exact(&mut word)?;
         let len = u16::from_le_bytes(word);
-        let mut routines = BTreeMap::new();
+        let mut exports = BTreeMap::new();
         for _ in 0..len {
             reader.read_exact(&mut byte)?;
             let mut name = vec![0u8; byte[0] as usize];
@@ -224,21 +267,32 @@ impl Module {
 
             reader.read_exact(&mut word)?;
             let offset = u16::from_le_bytes(word);
-            routines.insert(name, offset);
+            exports.insert(name, offset);
         }
 
         reader.read_exact(&mut word)?;
         let len = u16::from_le_bytes(word);
-        let mut externals = Vec::with_capacity(byte[0] as usize);
+        let mut imports = CallTable::default();
+        /* TODO: Rewrite
         for _ in 0..len {
             reader.read_exact(&mut byte)?;
-            let mut name = vec![0u8; byte[0] as usize];
-            reader.read_exact(&mut name)?;
-            let name = String::from_utf8(name).map_err(|err| ModuleError::ExternalNonUtf8(err))?;
-            externals.push(name);
+            let mut data = vec![0u8; byte[0] as usize];
+            reader.read_exact(&mut data)?;
+            let routine =
+                String::from_utf8(data).map_err(|err| ModuleError::ExternalNonUtf8(err))?;
+            reader.read_exact(&mut word);
+            let count = u16::from_le_bytes(word);
+            let mut sites = bset! {};
+            for _ in 0..count {
+                reader.read_exact(&mut word);
+                let site = u16::from_le_bytes(word);
+                sites.insert(site);
+            }
+            imports.push(CallRef { routine, sites });
         }
+         */
 
-        Ok(Module { isae, code, data, libs, vars, symbols: Symbols { externals, routines } })
+        Ok(Module { isae, code, data, vars, libs, imports, exports })
     }
 
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
@@ -250,7 +304,7 @@ impl Module {
         writer.write(&self.data)?;
         writer.write(&[self.libs.into_iter().count() as u8])?;
         for id in &self.libs {
-            writer.write(id.as_inner())?;
+            writer.write(id.as_bytes())?;
         }
         // TODO: Control maximal number of variables
         writer.write(&[self.vars.iter().count() as u8])?;
@@ -299,20 +353,27 @@ impl Module {
             }
         }
         // TODO: Control that the number of routines does not exceeds u16::MAX
-        writer.write(&(self.symbols.routines.len() as u16).to_le_bytes())?;
-        for (name, offset) in &self.symbols.routines {
+        writer.write(&(self.exports.len() as u16).to_le_bytes())?;
+        for (name, offset) in &self.exports {
             // TODO: Control length of routine names
             writer.write(&[name.len() as u8])?;
             writer.write(name.as_bytes())?;
             writer.write(&offset.to_le_bytes())?;
         }
+        /* TODO: Rewrite
         // TODO: Control that the number of external symbols does not exceeds u16::MAX
-        writer.write(&(self.symbols.externals.len() as u16).to_le_bytes())?;
-        for name in &self.symbols.externals {
-            // TODO: Control length of external calls
+        writer.write(&(self.imports.len() as u16).to_le_bytes())?;
+        for routne_ref in &self.imports {
+            // TODO: Control number of external calls
+            let name = routne_ref.name;
             writer.write(&[name.len() as u8])?;
             writer.write(name.as_bytes())?;
+            writer.write(&(routne_ref.sites.len() as u16).to_le_bytes())?;
+            for site in routne_ref.sites {
+                writer.write(&site.to_le_bytes())?;
+            }
         }
+         */
         Ok(())
     }
 }

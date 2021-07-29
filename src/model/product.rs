@@ -15,7 +15,7 @@ use crate::module::Variable;
 // TODO: Move shared part into AluVM structure (`Lib`)
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub enum Entry {
+pub enum EntryPoint {
     LibTable(BTreeMap<String, u16>),
     BinMain(u16),
 }
@@ -27,5 +27,5 @@ pub struct Product {
     pub data: ByteStr,
     pub libs: LibSeg,
     pub vars: Vec<Variable>,
-    pub entry: Entry,
+    pub entry_point: EntryPoint,
 }

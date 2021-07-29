@@ -16,15 +16,15 @@ mod pipelines;
 use std::error::Error;
 use std::num::ParseIntError;
 
-use aluvm::isa::{BytecodeError, Instr};
-use aluvm::libs::SegmentError;
+use aluvm::isa::Instr;
+use aluvm::libs::{CodeEofError, SegmentError};
 use amplify::{hex, IoError};
 pub use model::{ast, issues, module, product};
 pub use pipelines::{analyzer, compiler, linker, parser};
 use rustc_apfloat::ParseError;
 
 use crate::issues::Src;
-use crate::module::ModuleError;
+use crate::module::{CallTableError, ModuleError};
 use crate::parser::Rule;
 
 #[derive(Debug, Display, Error, From)]
@@ -273,7 +273,20 @@ impl<'i> LexerError<'i> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Display, Error)]
+/// Errors happening when editing existing instruction (should never happen and indicate internal
+/// compiler bug)
+#[derive(Clone, Debug, Display, Error, From)]
+#[display(doc_comments)]
+pub enum InstrError {
+    /// referenced position is outside of the code
+    #[from(CodeEofError)]
+    Read,
+
+    /// instruction has changed from `{0}` to `{1}`
+    Changed(&'static str, Instr),
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Display, Error, From)]
 #[display(doc_comments)]
 pub enum CompilerError {
     /// routine `{0}` is absent in the list of routines
@@ -288,10 +301,10 @@ pub enum CompilerError {
     /// instruction at position {0} has changed from `{1}` into `{2}`
     InstrChanged(u16, &'static str, Instr),
 
-    /// unable to write instruction at position {0}
-    /// \n
-    /// details: {1}
-    InstrWrite(u16, BytecodeError),
+    /// Call table error
+    #[from]
+    #[display(inner)]
+    CallTable(CallTableError),
 
     /// unable to construct float representation of literal `{0}.{1}e{2}`
     /// \n
@@ -306,8 +319,15 @@ impl CompilerError {
             CompilerError::RoutineEmpty(_) => 2,
             CompilerError::InstrRead(_) => 3,
             CompilerError::InstrChanged(_, _, _) => 4,
-            CompilerError::InstrWrite(_, _) => 5,
-            CompilerError::FloatConstruction(_, _, _, _) => 6,
+            CompilerError::FloatConstruction(_, _, _, _) => 5,
+            CompilerError::CallTable(_) => 6,
+        }
+    }
+
+    pub fn with(err: InstrError, pos: u16) -> Self {
+        match err {
+            InstrError::Read => CompilerError::InstrRead(pos),
+            InstrError::Changed(from, to) => CompilerError::InstrChanged(pos, from, to),
         }
     }
 }
@@ -322,10 +342,21 @@ impl From<CompilerError> for MainError {
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error)]
 #[display(doc_comments)]
-pub enum LinkerError {}
+pub enum LinkerError {
+    /// code segment size {0} exceeds maximal limit of 2^16 bytes
+    CodeSegmentOversized(usize),
+
+    /// data segment size {0} exceeds maximal limit of 2^16 bytes
+    DataSegmentOversized(usize),
+}
 
 impl LinkerError {
-    pub fn errno(&self) -> u16 { 0 }
+    pub fn errno(&self) -> u16 {
+        match self {
+            LinkerError::CodeSegmentOversized(_) => 1,
+            LinkerError::DataSegmentOversized(_) => 2,
+        }
+    }
 }
 
 impl From<LinkerError> for MainError {

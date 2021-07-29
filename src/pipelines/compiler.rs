@@ -16,7 +16,7 @@ use std::str::FromStr;
 use aluvm::data::{ByteStr, MaybeNumber, Step};
 use aluvm::isa::{
     ArithmeticOp, BitwiseOp, Bytecode, CmpOp, ControlFlowOp, DigestOp, Flag, Instr, MoveOp,
-    ParseFlagError, PutOp, ReservedOp, Secp256k1Op,
+    ParseFlagError, PutOp, Secp256k1Op,
 };
 use aluvm::libs::{Cursor, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
@@ -27,45 +27,8 @@ use rustc_apfloat::ieee;
 
 use crate::ast::{Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement};
 use crate::issues::{self, CompileError, Issues};
-use crate::module::{Module, Symbols};
-use crate::CompilerError;
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
-#[display(doc_comments)]
-pub enum LibError {
-    /// library `{0}` containing routine `{1}` is not found
-    LibNotFound(LibId, String),
-
-    /// number of external routine calls exceeds maximal number of jumps allowed by VM's `cy0`
-    TooManyRoutines,
-}
-
-pub struct LibFrame<'a, 'b> {
-    seg: &'a LibSeg,
-    sym: &'b mut Vec<String>,
-}
-
-impl<'a, 'b> LibFrame<'a, 'b> {
-    #[inline]
-    pub fn with(seg: &'a LibSeg, sym: &'b mut Vec<String>) -> Self { LibFrame { seg, sym } }
-
-    pub fn find_or_insert_ext(
-        &mut self,
-        id: LibId,
-        routine: &String,
-    ) -> Result<(u8, u16), LibError> {
-        let LibFrame { seg: libs, sym: routines } = self;
-        let pos1 = libs.index(id).ok_or(LibError::LibNotFound(id, routine.clone()))?;
-        if routines.len() >= u16::MAX as usize {
-            return Err(LibError::TooManyRoutines);
-        }
-        let pos2 = routines.iter().position(|name| name == routine).unwrap_or_else(|| {
-            routines.push(routine.clone());
-            routines.len() - 1
-        });
-        Ok((pos1, pos2 as u16))
-    }
-}
+use crate::module::{CallTable, Module};
+use crate::{CompilerError, InstrError};
 
 impl<'i> Program<'i> {
     pub fn compile(
@@ -79,19 +42,18 @@ impl<'i> Program<'i> {
             .map_err(|err| issues.push_error(err.into(), &self.libs.span))
             .unwrap_or_default();
         let mut code_segment = ByteStr::default();
+        let mut call_table = CallTable::default();
         let mut cursor = Cursor::new(&mut code_segment.bytes[..], &libs_segment);
 
-        let mut externals = vec![];
-        let mut frame = LibFrame::with(&libs_segment, &mut externals);
-
-        let routine_map: BTreeMap<String, Vec<u16>> =
-            self.routines.iter().try_fold(bmap! {}, |mut map, (name, routine)| {
-                map.insert(
-                    name.clone(),
-                    routine.compile(&mut cursor, self, &mut frame, dump, &mut issues)?,
-                );
+        let routine_map: BTreeMap<String, Vec<u16>> = self.routines.iter().try_fold(
+            bmap! {},
+            |mut map, (name, routine)| -> Result<_, CompilerError> {
+                let code =
+                    routine.compile(&mut cursor, self, &mut call_table, dump, &mut issues)?;
+                map.insert(name.clone(), code);
                 Ok(map)
-            })?;
+            },
+        )?;
 
         let pos = cursor.pos();
         let data = cursor.into_data_segment();
@@ -120,23 +82,23 @@ impl<'i> Program<'i> {
                     };
                     let pos =
                         *posmap.first().ok_or_else(|| CompilerError::RoutineEmpty(routine_name))?;
+
                     let seek = start + map[offset];
-                    cursor.seek(Some(seek));
-                    let mut instr = Instr::<ReservedOp>::read(&mut cursor)
-                        .map_err(|_| CompilerError::InstrRead(seek))?;
-                    let to = match instr {
-                        Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) => to,
-                        other => return Err(CompilerError::InstrChanged(seek, "routine", other)),
-                    };
-                    *to = pos;
-                    cursor.seek(Some(seek));
-                    instr.write(&mut cursor).map_err(|err| CompilerError::InstrWrite(seek, err))?;
+                    cursor
+                        .edit(seek, |instr| match instr {
+                            Instr::ControlFlow(ControlFlowOp::Routine(ref mut to)) => {
+                                *to = pos;
+                                Ok(())
+                            }
+                            other => Err(InstrError::Changed("routine", other.clone())),
+                        })
+                        .map_err(|err| CompilerError::with(err, seek))?;
                 }
             }
         }
 
         // TODO: Collect inputs
-        let input = vec![];
+        let vars = vec![];
         /*
         let input = self.input.values().map(|v| {
             Input {
@@ -149,11 +111,11 @@ impl<'i> Program<'i> {
         }).collect();
          */
 
-        let routines = routine_map
+        let exports = routine_map
             .iter()
             .filter_map(|(name, map)| Some((name.clone(), *map.first()?)))
             .collect();
-        let symbols = Symbols { externals, routines };
+
         let data = cursor.into_data_segment();
 
         Ok((
@@ -162,8 +124,9 @@ impl<'i> Program<'i> {
                 code: code_segment.to_vec(),
                 data,
                 libs: libs_segment,
-                vars: input,
-                symbols,
+                vars,
+                imports: call_table,
+                exports,
             },
             issues,
         ))
@@ -175,7 +138,7 @@ impl<'i> Routine<'i> {
         &'i self,
         cursor: &mut (impl Read + Write),
         program: &'i Program,
-        frame: &mut LibFrame,
+        lib_refs: &mut CallTable,
         dump: &mut Option<File>,
         issues: &mut Issues<'i, issues::Compile>,
     ) -> Result<Vec<u16>, CompilerError> {
@@ -184,15 +147,9 @@ impl<'i> Routine<'i> {
 
         let mut do_dump = true;
         for (no, statement) in self.statements.iter().enumerate() {
-            let pos = match cursor.pos() {
-                Some(pos) => pos,
-                None => {
-                    issues.push_error(CompileError::CodeLengthOverflow, &statement.span);
-                    break;
-                }
-            };
+            let pos = cursor.pos();
             instr_map.push(pos);
-            let instr = statement.compile(program, frame, issues)?;
+            let instr = statement.compile(program, lib_refs, issues)?;
             if let Err(err) = instr.write(cursor) {
                 issues.push_error(err.into(), &statement.span);
                 break;
@@ -204,6 +161,12 @@ impl<'i> Routine<'i> {
                     .unwrap_or(no as u16);
                 jump_map.insert(pos, instr_no);
             }
+            match instr {
+                Instr::ControlFlow(ControlFlowOp::Call(site) | ControlFlowOp::Exec(site)) => {
+                    lib_refs.get_mut(site)?.sites.insert(pos);
+                }
+                _ => {}
+            };
 
             if do_dump {
                 if let Some(df) = dump {
@@ -221,23 +184,19 @@ impl<'i> Routine<'i> {
             }
         }
 
-        let end = cursor.pos();
-
         for (from, to) in jump_map {
-            cursor.seek(Some(from));
-            let mut instr =
-                Instr::<ReservedOp>::read(cursor).map_err(|_| CompilerError::InstrRead(from))?;
-            let pos = match instr {
-                Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
-                | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) => pos,
-                other => return Err(CompilerError::InstrChanged(from, "jump", other)),
-            };
-            *pos = instr_map[to as usize];
-            cursor.seek(Some(from));
-            instr.write(cursor).map_err(|err| CompilerError::InstrWrite(from, err))?;
+            cursor
+                .edit(from, |instr| {
+                    let pos = match instr {
+                        Instr::ControlFlow(ControlFlowOp::Jif(ref mut pos))
+                        | Instr::ControlFlow(ControlFlowOp::Jmp(ref mut pos)) => pos,
+                        other => return Err(InstrError::Changed("jump", other.clone())),
+                    };
+                    *pos = instr_map[to as usize];
+                    Ok(())
+                })
+                .map_err(|err| CompilerError::with(err, from))?;
         }
-
-        cursor.seek(end);
 
         Ok(instr_map)
     }
@@ -497,7 +456,7 @@ impl<'i> Statement<'i> {
         &'i self,
         no: u8,
         program: &'i Program,
-        frame: &mut LibFrame,
+        frame: &mut CallTable,
         issues: &mut Issues<'i, issues::Compile>,
     ) -> LibSite {
         let operand = if let Some(operand) = self.operands.get(no as usize) {
@@ -520,8 +479,8 @@ impl<'i> Statement<'i> {
                     issues.push_error(CompileError::LibUnknown(lib.clone()), span);
                     LibId::default()
                 });
-                match frame.find_or_insert_ext(id, routine) {
-                    Ok((_, pos)) => return LibSite::with(pos, id),
+                match frame.find_or_insert(id, routine) {
+                    Ok(pos) => return LibSite::with(pos, id),
                     Err(err) => {
                         issues.push_error(err.into(), span);
                         return LibSite::default();
@@ -545,7 +504,7 @@ impl<'i> Statement<'i> {
     pub fn compile(
         &'i self,
         program: &'i Program,
-        frame: &mut LibFrame,
+        lib_refs: &mut CallTable,
         issues: &mut Issues<'i, issues::Compile>,
     ) -> Result<Instr, CompilerError> {
         macro_rules! reg {
@@ -565,7 +524,7 @@ impl<'i> Statement<'i> {
         }
         macro_rules! lib {
             ($no:expr) => {
-                self.lib($no, program, frame, issues)
+                self.lib($no, program, lib_refs, issues)
             };
         }
         macro_rules! flags {

@@ -15,7 +15,7 @@ use pest::iterators::Pair;
 use pest::Span;
 
 use crate::ast::Operator;
-use crate::compiler::LibError;
+use crate::module::CallTableError;
 use crate::parser::Rule;
 
 pub trait Issue: Debug + Display {
@@ -142,7 +142,7 @@ pub enum CompileError {
 
     #[from]
     #[display(inner)]
-    LibError(LibError),
+    LibError(CallTableError),
 
     /// call to an unknown routine `{0}`
     RoutineUnknown(String),
@@ -214,10 +214,12 @@ impl Issue for CompileError {
             CompileError::ConstWrongType { .. } => 4017,
             CompileError::LibUnknown(_) => 4018,
             CompileError::LibError(err) => match err {
-                LibError::LibNotFound(_, _) => 4019,
-                LibError::TooManyRoutines => 4020,
+                CallTableError::LibNotFound(_) => 4019,
+                CallTableError::TooManyRoutines => 4020,
+                CallTableError::LibTableNotFound(_) => 4021,
+                CallTableError::RoutineNotFound(_, _) => 4022,
             },
-            CompileError::RoutineUnknown(_) => 4021,
+            CompileError::RoutineUnknown(_) => 4023,
         }
     }
 
