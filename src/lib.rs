@@ -403,6 +403,16 @@ pub enum BuildError {
     /// details: {details}
     ObjFileWrite { file: String, details: Box<dyn Error> },
 
+    /// unable to create product file `{file}`
+    /// \n
+    /// details: {details}
+    ProductFileCreation { file: String, details: Box<dyn Error> },
+
+    /// unable to write into product file `{file}`
+    /// \n
+    /// details: {details}
+    ProductFileWrite { file: String, details: Box<dyn Error> },
+
     /// unable to create library out of object data for `{file}`
     /// \n
     /// details: {details}

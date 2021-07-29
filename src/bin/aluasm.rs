@@ -58,7 +58,7 @@ pub struct Args {
 
 fn main() {
     let args = Args::parse();
-    compile(&args).unwrap_or_else(|| {
+    compile(&args).unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1)
     });

@@ -16,7 +16,7 @@ exclude = [".github"]
 name = "aluasm"
 
 [[bin]]
-name = "alulink"
+name = "alink"
 
 [dependencies]
 amplify = "3.7"

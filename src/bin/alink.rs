@@ -12,12 +12,13 @@ use std::process::exit;
 
 use aluasm::module::Module;
 use aluasm::{BuildError, MainError};
+use aluvm::data::encoding::Encode;
 use clap::{AppSettings, Clap};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Clap)]
 #[clap(
-    name = "alulink",
-    bin_name = "alulink",
+    name = "alink",
+    bin_name = "alink",
     author,
     version,
     about,
@@ -56,6 +57,15 @@ pub struct Args {
     #[clap(short = 'B', long, global = true, default_value = "./build/")]
     pub build_dir: PathBuf,
 
+    /// Name of the product file to generate (without extension). Defaults to the same name as the
+    /// object file; required if multiple object files are used.
+    #[clap(short = 'n', long)]
+    pub product_name: Option<String>,
+
+    /// Organization name to use for the product generation; should use domain name notation
+    #[clap(short, long = "org")]
+    pub org_name: String,
+
     /// Object file to link
     #[clap(required = true)]
     pub file: PathBuf,
@@ -71,17 +81,23 @@ fn main() {
 }
 
 fn link(args: &Args) -> Result<(), MainError> {
-    let product_name = args
-        .file
-        .file_name()
-        .ok_or(BuildError::NotFile(args.file.to_string_lossy().to_string()))?
-        .to_string_lossy()
-        .to_string();
-    eprintln!("\x1B[1;32m  Linking\x1B[0m {}", product_name,);
+    let product_name = args.product_name.as_ref().cloned().unwrap_or(
+        args.file
+            .file_stem()
+            .ok_or(BuildError::NotFile(args.file.to_string_lossy().to_string()))?
+            .to_string_lossy()
+            .to_string(),
+    );
+    let org_name = args.org_name.clone();
+    eprintln!("\x1B[1;32m  Linking\x1B[0m {}\x1B[5;34m@{}\x1B[0m", product_name, org_name);
 
-    let module = read_object(&args.file, &args)?;
+    let (module, module_name) = read_object(&args.file, &args)?;
 
-    let (product, issues) = if args.bin { module.link_bin()? } else { module.link_lib()? };
+    let (product, issues) = if args.bin {
+        module.link_bin(product_name.clone(), org_name.clone())?
+    } else {
+        module.link_lib(product_name.clone(), org_name.clone())?
+    };
 
     if issues.has_errors() {
         return Err(MainError::Linking(
@@ -92,6 +108,23 @@ fn link(args: &Args) -> Result<(), MainError> {
         ));
     }
     eprintln!("{}", issues);
+
+    if args.verbose > 1 {
+        eprintln!("{}", product);
+    }
+
+    let mut target_path = args.build_dir.clone();
+    target_path.push(format!("{}@{}", product_name, org_name));
+    target_path.set_extension("rex");
+    let target_name = target_path.to_string_lossy().to_string();
+    let file = File::create(&target_path).map_err(|err| BuildError::ProductFileCreation {
+        file: target_name.clone(),
+        details: Box::new(err),
+    })?;
+    product.encode(file).map_err(|err| BuildError::ProductFileWrite {
+        file: target_name,
+        details: Box::new(err),
+    })?;
 
     Ok(())
 }
@@ -110,13 +143,13 @@ fn read_all_objects(args: &Args) -> Result<Vec<Module>, MainError> {
         if path.is_dir() {
             continue;
         }
-        vec.push(read_object(&path, &args)?);
+        vec.push(read_object(&path, &args)?.0);
     }
 
     Ok(vec)
 }
 
-fn read_object(path: &PathBuf, _args: &Args) -> Result<Module, MainError> {
+fn read_object(path: &PathBuf, _args: &Args) -> Result<(Module, String), MainError> {
     let file_name = path
         .file_name()
         .ok_or(BuildError::NotFile(path.to_string_lossy().to_string()))?
@@ -134,5 +167,7 @@ fn read_object(path: &PathBuf, _args: &Args) -> Result<Module, MainError> {
         details: Box::new(err),
     })?;
 
-    Module::read(fd).map_err(|err| MainError::Module(err, file_name))
+    let module = Module::read(fd).map_err(|err| MainError::Module(err, file_name.clone()))?;
+
+    Ok((module, file_name))
 }

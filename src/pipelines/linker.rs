@@ -16,7 +16,11 @@ use crate::product::{EntryPoint, Product};
 use crate::LinkerError;
 
 impl Module {
-    pub fn link_bin(&self) -> Result<(Product, Issues<issues::Linking>), LinkerError> {
+    pub fn link_bin(
+        &self,
+        name: String,
+        org: String,
+    ) -> Result<(Product, Issues<issues::Linking>), LinkerError> {
         let mut issues = Issues::default();
 
         let entry_point = self.exports.get(".MAIN").copied().unwrap_or_else(|| {
@@ -24,11 +28,15 @@ impl Module {
             0
         });
 
-        let product = self.link(EntryPoint::BinMain(entry_point), &mut issues)?;
+        let product = self.link(name, org, EntryPoint::BinMain(entry_point), &mut issues)?;
         Ok((product, issues))
     }
 
-    pub fn link_lib(&self) -> Result<(Product, Issues<issues::Linking>), LinkerError> {
+    pub fn link_lib(
+        &self,
+        name: String,
+        org: String,
+    ) -> Result<(Product, Issues<issues::Linking>), LinkerError> {
         let mut issues = Issues::default();
 
         if self.exports.get(".MAIN").is_some() {
@@ -38,12 +46,14 @@ impl Module {
         // TODO: Generate table;
         let mut table = bmap! {};
 
-        let product = self.link(EntryPoint::LibTable(table), &mut issues)?;
+        let product = self.link(name, org, EntryPoint::LibTable(table), &mut issues)?;
         Ok((product, issues))
     }
 
     fn link(
         &self,
+        name: String,
+        org: String,
         entry_point: EntryPoint,
         issues: &mut Issues<issues::Linking>,
     ) -> Result<Product, LinkerError> {
@@ -55,6 +65,10 @@ impl Module {
         let libs = self.libs.clone();
         let vars = self.vars.clone();
 
-        Ok(Product { isae, code, data, libs, vars, entry_point })
+        for (lib, routine, map) in self.imports.call_refs() {
+            issues.push_error_nospan(LinkingError::LibraryAbsent(lib, name.clone()));
+        }
+
+        Ok(Product { name, org, isae, code, data, libs, vars, entry_point })
     }
 }

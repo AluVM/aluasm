@@ -8,8 +8,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read, Write};
 use std::string::FromUtf8Error;
+use std::vec::IntoIter;
 
-use aluvm::data::{FloatLayout, IntLayout, MaybeNumber, Number, NumberLayout};
+use aluvm::data::encoding::{Encode, EncodeError};
+use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber, Number, NumberLayout};
 use aluvm::libs::constants::ISAE_SEGMENT_MAX_LEN;
 use aluvm::libs::{LibId, LibSeg, LibSegOverflow, LibSite};
 use amplify::IoError;
@@ -60,6 +62,28 @@ impl CallTable {
                 vec.len() - 1
             });
         Ok(pos as u16)
+    }
+
+    pub fn routines(&self) -> IntoIter<&str> {
+        self.0
+            .iter()
+            .flat_map(|(id, routines)| {
+                routines.into_iter().map(|call_ref| call_ref.routine.as_str())
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    pub fn call_refs(&self) -> IntoIter<(LibId, &str, &BTreeSet<u16>)> {
+        self.0
+            .iter()
+            .flat_map(|(id, routines)| {
+                routines
+                    .into_iter()
+                    .map(move |call_ref| (*id, call_ref.routine.as_str(), &call_ref.sites))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 
@@ -132,6 +156,30 @@ pub enum ModuleError {
 
     /// unknown float layout type `{0}` for input variable having description "{1}"
     VarWrongFloatType(u8, String),
+}
+
+impl Encode for DataType {
+    type Error = EncodeError;
+
+    fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
+        match self {
+            DataType::ByteStr(bytestr) => {
+                return Ok(0xFF_u8.encode(&mut writer)?
+                    + bytestr.as_ref().map(ByteStr::with).encode(&mut writer)?)
+            }
+            DataType::Int(layout, default) => (Layout::from(*layout), default),
+            DataType::Float(layout, default) => (Layout::from(*layout), default),
+        }
+        .encode(&mut writer)
+    }
+}
+
+impl Encode for Variable {
+    type Error = EncodeError;
+
+    fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
+        Ok(self.info.encode(&mut writer)? + self.data.encode(&mut writer)?)
+    }
 }
 
 impl Module {
