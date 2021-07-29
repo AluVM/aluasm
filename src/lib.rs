@@ -16,6 +16,7 @@ mod pipelines;
 use std::error::Error;
 use std::num::ParseIntError;
 
+use aluvm::data::encoding::DecodeError;
 use aluvm::isa::Instr;
 use aluvm::libs::{CodeEofError, SegmentError};
 use amplify::{hex, IoError};
@@ -63,7 +64,7 @@ pub enum MainError {
         "\x1B[1;31mError:\x1B[0m {0}\n\n\x1B[1;31mError:\x1B[0m failing due to broken binary data \
          in module `{1}` "
     )]
-    Module(ModuleError, String),
+    Module(DecodeError, String),
 
     #[display(
         "{3}\n\x1B[1;31mError:\x1B[0m could not link `{0}` due to {1} previous error(s); {2} \

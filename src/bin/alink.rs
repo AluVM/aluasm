@@ -12,7 +12,7 @@ use std::process::exit;
 
 use aluasm::module::Module;
 use aluasm::{BuildError, MainError};
-use aluvm::data::encoding::Encode;
+use aluvm::data::encoding::{Decode, Encode};
 use clap::{AppSettings, Clap};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Clap)]
@@ -167,7 +167,7 @@ fn read_object(path: &PathBuf, _args: &Args) -> Result<(Module, String), MainErr
         details: Box::new(err),
     })?;
 
-    let module = Module::read(fd).map_err(|err| MainError::Module(err, file_name.clone()))?;
+    let module = Module::decode(fd).map_err(|err| MainError::Module(err, file_name.clone()))?;
 
     Ok((module, file_name))
 }

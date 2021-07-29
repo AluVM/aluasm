@@ -15,6 +15,7 @@ use std::process::exit;
 use aluasm::ast::Program;
 use aluasm::parser::{Parser, Rule};
 use aluasm::{BuildError, LexerError, MainError};
+use aluvm::data::encoding::Encode;
 use aluvm::isa::ReservedOp;
 use aluvm::libs::Lib;
 use clap::{AppSettings, Clap};
@@ -151,7 +152,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
         file: dest_name.clone(),
         details: Box::new(err),
     })?;
-    module.write(&mut fd).map_err(|err| BuildError::ObjFileWrite {
+    module.encode(&mut fd).map_err(|err| BuildError::ObjFileWrite {
         file: dest_name.clone(),
         details: Box::new(err),
     })?;
