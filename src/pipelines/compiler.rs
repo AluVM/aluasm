@@ -15,8 +15,8 @@ use std::str::FromStr;
 
 use aluvm::data::{ByteStr, MaybeNumber, Step};
 use aluvm::isa::{
-    ArithmeticOp, BitwiseOp, Bytecode, CmpOp, ControlFlowOp, DigestOp, Flag, Instr, MoveOp,
-    ParseFlagError, PutOp, Secp256k1Op,
+    ArithmeticOp, BitwiseOp, Bytecode, BytesOp, CmpOp, ControlFlowOp, DigestOp, Flag, Instr,
+    MoveOp, ParseFlagError, PutOp, Secp256k1Op,
 };
 use aluvm::libs::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
@@ -303,7 +303,7 @@ impl<'i> Statement<'i> {
             .unwrap_or_default()
     }
 
-    fn val(
+    fn num(
         &'i self,
         no: u8,
         reg: impl NumericRegister,
@@ -370,6 +370,66 @@ impl<'i> Statement<'i> {
             }
         };
         val.reshape(reg.layout());
+        Ok(val)
+    }
+
+    fn str(
+        &'i self,
+        no: u8,
+        consts: &'i BTreeMap<String, Const<'i>>,
+        issues: &mut Issues<'i, issues::Compile>,
+    ) -> Result<ByteStr, CompilerError> {
+        let operand = if let Some(operand) = self.operands.get(no as usize) {
+            operand
+        } else {
+            issues.push_error(
+                CompileError::OperandMissed {
+                    operator: self.operator.0,
+                    pos: no + 1,
+                    expected: "constant or number literal",
+                },
+                &self.operator.1,
+            );
+            return Ok(ByteStr::default());
+        };
+
+        let val = match operand {
+            Operand::Lit(Literal::String(s), _) => ByteStr::with(s),
+            Operand::Const(name, span) => {
+                let val = match consts.get(name) {
+                    Some(val) => val,
+                    None => {
+                        issues.push_error(CompileError::ConstUnknown(name.clone()), span);
+                        return Ok(ByteStr::default());
+                    }
+                };
+                match &val.value {
+                    Literal::String(s) => ByteStr::with(s),
+                    lit => {
+                        issues.push_error(
+                            CompileError::ConstWrongType {
+                                name: name.clone(),
+                                expected: "string literal",
+                                found: lit.description(),
+                            },
+                            span,
+                        );
+                        return Ok(ByteStr::default());
+                    }
+                }
+            }
+            op => {
+                issues.push_error(
+                    CompileError::OperandWrongType {
+                        operator: self.operator.0,
+                        pos: no + 1,
+                        expected: "constant or string literal",
+                    },
+                    op.as_span(),
+                );
+                return Ok(ByteStr::default());
+            }
+        };
         Ok(val)
     }
 
@@ -508,9 +568,14 @@ impl<'i> Statement<'i> {
                 self.idx($no, issues)
             };
         }
-        macro_rules! val {
+        macro_rules! num {
             ($no:expr, $reg:ident) => {
-                Box::new(self.val($no, $reg, &program.consts, issues)?)
+                Box::new(self.num($no, $reg, &program.consts, issues)?)
+            };
+        }
+        macro_rules! str {
+            ($no:expr) => {
+                Box::new(self.str($no, &program.consts, issues)?)
             };
         }
         macro_rules! lib {
@@ -542,13 +607,14 @@ impl<'i> Statement<'i> {
                 RegAFR::R(r) => Instr::Put(PutOp::ClrR(r, idx! {0})),
             },
             Operator::put => match reg! {1} {
-                RegAFR::A(a) => Instr::Put(PutOp::PutA(a, idx! {1}, val! {0, a})),
-                RegAFR::F(f) => Instr::Put(PutOp::PutF(f, idx! {1}, val! {0, f})),
-                RegAFR::R(r) => Instr::Put(PutOp::PutR(r, idx! {1}, val! {0, r})),
+                RegAll::A(a) => Instr::Put(PutOp::PutA(a, idx! {1}, num! {0, a})),
+                RegAll::F(f) => Instr::Put(PutOp::PutF(f, idx! {1}, num! {0, f})),
+                RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {1}, num! {0, r})),
+                RegAll::S => Instr::Bytes(BytesOp::Put(idx! {1}, str! {0}, false)),
             },
             Operator::putif => match reg! {1} {
-                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, val! {0, a})),
-                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {1}, val! {0, r})),
+                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, num! {0, a})),
+                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {1}, num! {0, r})),
             },
 
             // *** Move operations
@@ -575,9 +641,10 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAFR::A(a) => Instr::Move(MoveOp::MovA(a, idx! {0}, idx! {1})),
-                    RegAFR::F(f) => Instr::Move(MoveOp::MovF(f, idx! {0}, idx! {1})),
-                    RegAFR::R(r) => Instr::Move(MoveOp::MovR(r, idx! {0}, idx! {1})),
+                    RegAll::A(a) => Instr::Move(MoveOp::MovA(a, idx! {0}, idx! {1})),
+                    RegAll::F(f) => Instr::Move(MoveOp::MovF(f, idx! {0}, idx! {1})),
+                    RegAll::R(r) => Instr::Move(MoveOp::MovR(r, idx! {0}, idx! {1})),
+                    RegAll::S => Instr::Bytes(BytesOp::Mov(idx! {0}, idx! {1})),
                 }
             }
             Operator::cnv => match (reg! {0}, reg! {1}) {
@@ -604,8 +671,20 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAF::A(a) => Instr::Move(MoveOp::SwpA(a, idx! {0}, idx! {1})),
-                    RegAF::F(f) => Instr::Move(MoveOp::SwpF(f, idx! {0}, idx! {1})),
+                    RegAll::A(a) => Instr::Move(MoveOp::SwpA(a, idx! {0}, idx! {1})),
+                    RegAll::F(f) => Instr::Move(MoveOp::SwpF(f, idx! {0}, idx! {1})),
+                    RegAll::S => Instr::Bytes(BytesOp::Swp(idx! {0}, idx! {1})),
+                    _ => {
+                        issues.push_error(
+                            CompileError::OperandWrongReg {
+                                operator: Operator::mov,
+                                pos: 0,
+                                expected: "register S",
+                            },
+                            self.operands[1].as_span(),
+                        );
+                        Instr::Nop
+                    }
                 }
             }
 
