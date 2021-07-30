@@ -1,0 +1,33 @@
+.ISAE ; ISA Extensions segment
+                ALU
+                SECP256
+
+;; Computes sum of two Pedersen commitments
+;;
+;; # Arguments
+;; - r512[1], r512[2] - first pair of keys
+;; - r512[3], r512[4] - second pair of keys
+;;
+;; # Returns
+;; - t512[5], r512[6] - sum of keys
+.ROUTINE sum
+                secpadd r512[3], r512[1]
+                jif     continue
+                fail
+continue:       secpadd r512[4], r512[2]
+                jif     return
+                fail
+return:         mov     r512[1], r512[5]
+                mov     r512[2], r512[6]
+                ret
+
+.ROUTINE verify
+                secpneg r512[7], r512[7]
+                secpneg r512[8], r512[8]
+                eq.n    r512[1], r512[7]
+                jif     continue
+                fail
+continue:       eq.n    r512[2], r512[8]
+                jif     return
+                fail
+return:         nop

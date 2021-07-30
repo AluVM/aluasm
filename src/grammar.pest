@@ -4,7 +4,7 @@ bech32 = _{ ASCII_ALPHANUMERIC+ }
 COMMENT = _{ ";" ~ (!NEWLINE ~ ANY)* }
 WHITESPACE = _{ " " | "\t" }
 
-isae_name = { ASCII_ALPHA_UPPER{2,} }
+isae_name = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHA_UPPER | ASCII_DIGIT)* }
 isae = { ".ISAE" ~ (isae_name | NEWLINE)+ }
 
 reg_a = @{ ^"a" }

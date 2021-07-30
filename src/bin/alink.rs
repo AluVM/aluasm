@@ -195,6 +195,9 @@ fn enumerate_libs(lib_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, BuildError>
     Ok(vec)
 }
 
+// TODO: Reserved for the future where linked will be able to use multiple modules for single
+//       product
+#[allow(dead_code)]
 fn read_all_objects(args: &Args) -> Result<Vec<Module>, MainError> {
     let obj_dir = args.obj_dir.to_string_lossy().to_string();
     if args.obj_dir.is_file() {

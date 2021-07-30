@@ -1,0 +1,32 @@
+.ISAE ; ISA Extensions segment
+                ALU
+                RGB
+
+.LIBS
+                pedersen alu145mc48u7f6n9lzesm5wpvrq5y8rck9qgyyjpd2vshpv3ww7cp89qv27dl3
+
+.ROUTINE sum_inputs
+                scn.i   0, a16[2]
+loop:           pld.i   0, a16[2], r512[3], r512[4]
+                call    sum
+                dec     a16[2]
+                ifz     a16[2]
+                stinv
+                jif     loop
+                ret
+
+.ROUTINE sum_outputs
+                scn.o   0, a16[1]
+loop:           pld.o   0, a16[1], r512[2], r512[3]
+                call    sum
+                dec     a16[1]
+                ifz     a16[1]
+                stinv
+                jif     loop
+                ret
+
+.ROUTINE verify
+                call    sum_inputs
+                call    sum_outputs
+                call    pedersen -> verify
+                succ
