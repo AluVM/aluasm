@@ -326,7 +326,7 @@ impl<'i> Statement<'i> {
                 CompileError::OperandMissed {
                     operator: self.operator.0,
                     pos: no + 1,
-                    expected: "constant or integer literal",
+                    expected: "constant or number literal",
                 },
                 &self.operator.1,
             );
@@ -371,7 +371,7 @@ impl<'i> Statement<'i> {
                     CompileError::OperandWrongType {
                         operator: self.operator.0,
                         pos: no + 1,
-                        expected: op.description(),
+                        expected: "constant or number literal",
                     },
                     op.as_span(),
                 );
@@ -566,7 +566,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -580,7 +580,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -609,7 +609,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -624,7 +624,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -638,7 +638,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -652,7 +652,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -696,7 +696,7 @@ impl<'i> Statement<'i> {
                     if reg != reg! {1} {
                         issues.push_error(
                             CompileError::OperandRegMutBeEqual(self.operator.0),
-                            self.operands[2].as_span(),
+                            self.operands[1].as_span(),
                         );
                     }
                     match reg {
@@ -725,7 +725,7 @@ impl<'i> Statement<'i> {
                     if reg != reg! {1} {
                         issues.push_error(
                             CompileError::OperandRegMutBeEqual(self.operator.0),
-                            self.operands[2].as_span(),
+                            self.operands[1].as_span(),
                         );
                     }
                     match reg {
@@ -743,7 +743,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {
@@ -760,7 +760,7 @@ impl<'i> Statement<'i> {
                 if reg != reg! {1} {
                     issues.push_error(
                         CompileError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[2].as_span(),
+                        self.operands[1].as_span(),
                     );
                 }
                 match reg {

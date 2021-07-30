@@ -250,9 +250,17 @@ impl From<BytecodeError> for CompileError {
                 WriteError::CodeNotFittingSegment => CompileError::CodeLengthOverflow,
                 WriteError::DataExceedsLimit(_) => CompileError::DataLengthOverflow,
                 WriteError::DataNotFittingSegment => CompileError::DataLengthOverflow,
-                WriteError::LibAbsent(_) => unreachable!("internal compiler error I0002"),
+                WriteError::LibAbsent(_) => CompileError::OperandWrongType {
+                    operator: Operator::call,
+                    pos: 0,
+                    expected: "must be a valid library reference",
+                },
             },
-            BytecodeError::PutNoNumber => unreachable!("internal compiler error I0001"),
+            BytecodeError::PutNoNumber => CompileError::OperandWrongType {
+                operator: Operator::put,
+                pos: 0,
+                expected: "must be a number literal or constant reference",
+            },
         }
     }
 }
