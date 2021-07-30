@@ -42,7 +42,7 @@ pub struct Args {
 
     /// Tests disassembly of the generated library
     #[clap(long, global = true)]
-    pub test_disassemble: bool,
+    pub test: bool,
 
     /// Directory to output object files into
     #[clap(short, long, global = true, default_value = "./build/objects")]
@@ -157,15 +157,15 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
         println!("{}\n", module);
     }
 
-    if args.test_disassemble {
-        if args.test_disassemble {
+    if args.test {
+        if args.test {
             let code = module
                 .as_static_lib()
                 .disassemble::<Instr>()
                 .map_err(|_| BuildError::Disassembling { file: dest_name })?;
 
             if args.verbose >= 2 {
-                eprintln!("\x1B[0;35m Printing\x1B[0m module disassemply:");
+                eprintln!("\x1B[0;35m Printing\x1B[0m module disassembly:");
                 for instr in code {
                     println!("\t\t{}", instr);
                 }

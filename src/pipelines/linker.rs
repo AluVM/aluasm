@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use aluvm::data::encoding::Decode;
 use aluvm::isa::{ControlFlowOp, Instr};
-use aluvm::libs::{Cursor, LibId, Write};
+use aluvm::libs::{Cursor, Lib, LibId, Write};
 
 use crate::issues::{self, Issues, LinkingError, LinkingWarning};
 use crate::module::Module;
@@ -62,7 +62,7 @@ impl Module {
         lib_man: &mut LibManager,
         issues: &mut Issues<issues::Linking>,
     ) -> Result<Product, LinkerError> {
-        let isae = self.inner.isae.join(" ");
+        let isae = self.inner.isae.clone();
         let code = self.inner.code.clone();
         let data = self.inner.data.clone();
         let libs = self.inner.libs.clone();
@@ -106,7 +106,8 @@ impl Module {
             }
         }
 
-        let inner = DyInner { name, org, isae, code, data, libs, vars };
+        let lib = Lib { isae, code, data, libs };
+        let inner = DyInner { name, org, inner: lib, vars };
         Ok(match entry_point {
             EntryPoint::LibTable(exports) => Product::Lib(DyLib { inner, exports }),
             EntryPoint::BinMain(entry_point) => Product::Bin(DyBin { inner, entry_point }),

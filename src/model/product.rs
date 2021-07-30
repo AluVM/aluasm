@@ -10,8 +10,7 @@ use std::fmt::{self, Display, Formatter, Write as WriteTrait};
 use std::io::{self, Read, Write};
 
 use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
-use aluvm::data::ByteStr;
-use aluvm::libs::{LibId, LibSeg};
+use aluvm::libs::{Lib, LibId};
 
 use crate::module::Variable;
 
@@ -42,16 +41,16 @@ impl Display for EntryPoint {
 pub struct DyInner {
     pub name: String,
     pub org: String,
-    pub isae: String,
-    pub code: ByteStr,
-    pub data: ByteStr,
-    pub libs: LibSeg,
+    pub(crate) inner: Lib,
     pub vars: Vec<Variable>,
 }
 
 impl DyInner {
     #[inline]
-    pub fn lib_id(&self) -> LibId { LibId::with(&self.isae, &self.code, &self.data, &self.libs) }
+    pub fn lib_id(&self) -> LibId { self.inner.id() }
+
+    #[inline]
+    pub fn as_static_lib(&self) -> &Lib { &self.inner }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
@@ -92,10 +91,7 @@ impl Product {
 impl Display for DyInner {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "NAME:   {}@{}", self.name, self.org)?;
-        writeln!(f, "ISAE:   {}", self.isae)?;
-        write!(f, "CODE:\n{:#10}", self.code)?;
-        write!(f, "DATA:\n{:#10}", self.data)?;
-        write!(f, "LIBS:   {:>8}", self.libs)?;
+        Display::fmt(&self.inner, f)?;
 
         f.write_str("VARS:   ")?;
         for (line, v) in self.vars.iter().enumerate() {
@@ -169,10 +165,7 @@ impl Encode for DyInner {
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
         Ok(self.name.encode(&mut writer)?
             + self.org.encode(&mut writer)?
-            + self.isae.encode(&mut writer)?
-            + self.code.encode(&mut writer)?
-            + self.data.encode(&mut writer)?
-            + self.libs.encode(&mut writer)?
+            + self.inner.encode(&mut writer)?
             + MaxLenWord::new(&self.vars).encode(&mut writer)?)
     }
 }
@@ -187,10 +180,7 @@ impl Decode for DyInner {
         Ok(DyInner {
             name: Decode::decode(&mut reader)?,
             org: Decode::decode(&mut reader)?,
-            isae: Decode::decode(&mut reader)?,
-            code: Decode::decode(&mut reader)?,
-            data: Decode::decode(&mut reader)?,
-            libs: Decode::decode(&mut reader)?,
+            inner: Decode::decode(&mut reader)?,
             vars: MaxLenWord::decode(&mut reader)?.release(),
         })
     }
