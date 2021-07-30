@@ -12,7 +12,7 @@ use std::string::FromUtf8Error;
 use std::vec::IntoIter;
 
 use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
-use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber};
+use aluvm::data::{ByteStr, FloatLayout, IntLayout, MaybeNumber, Number, NumberLayout};
 use aluvm::libs::constants::LIBS_SEGMENT_MAX_COUNT;
 use aluvm::libs::{Lib, LibId, LibSegOverflow, LibSite};
 use amplify::hex::format_hex;
@@ -131,7 +131,7 @@ impl Display for CallRef {
         for offset in &self.sites {
             write!(f, " 0x{:04X}", offset)?;
         }
-        f.write_char('\n')
+        Ok(())
     }
 }
 
@@ -143,8 +143,11 @@ impl Display for CallTable {
             }
             writeln!(f, "{}:", lib)?;
             for call_ref in map {
-                write!(f, "\t\t{}", call_ref)?;
+                writeln!(f, "{:2$}- {}", "", call_ref, f.width().unwrap_or_default())?;
             }
+        }
+        if self.0.is_empty() {
+            f.write_char('\n')?;
         }
         Ok(())
     }
@@ -154,16 +157,21 @@ impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             DataType::ByteStr(Some(default)) => {
-                f.write_str("bytes\tdefault(0x")?;
-                format_hex(default, f)?;
-                f.write_char(')')
+                f.write_str("bytes = ")?;
+                format_hex(default, f)
             }
-            DataType::ByteStr(None) => f.write_str("bytes\tdefault(none)"),
+            DataType::ByteStr(None) => f.write_str("bytes"),
+            DataType::Int(layout, default) if default.is_none() => {
+                write!(f, "{}", layout)
+            }
+            DataType::Float(layout, default) if default.is_none() => {
+                write!(f, "{}", layout)
+            }
             DataType::Int(layout, default) => {
-                write!(f, "int({})\tdefault({})", layout, default)
+                write!(f, "{} = {}", layout, default.unwrap())
             }
             DataType::Float(layout, default) => {
-                write!(f, "float({})\tdefault({})", layout, default)
+                write!(f, "{} = {}", layout, default)
             }
         }
     }
@@ -171,11 +179,7 @@ impl Display for DataType {
 
 impl Display for Variable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_char('\t')?;
-        Display::fmt(&self.data, f)?;
-        f.write_char('\t')?;
-        f.write_str(&self.info)?;
-        f.write_char('\n')
+        write!(f, "{}; {}", self.data, self.info)
     }
 }
 
@@ -263,14 +267,29 @@ impl Encode for DataType {
 
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
         match self {
-            DataType::ByteStr(bytestr) => {
-                return Ok(0xFF_u8.encode(&mut writer)?
-                    + bytestr.as_ref().map(ByteStr::with).encode(&mut writer)?)
+            DataType::ByteStr(bytestr) => Ok(0xFF_u8.encode(&mut writer)?
+                + bytestr.as_ref().map(ByteStr::with).encode(&mut writer)?),
+            DataType::Int(layout, default) if default.is_some() => {
+                let mut count = layout.encode(&mut writer)?;
+                count += 1u8.encode(&mut writer)?;
+                let len = layout.bytes as usize;
+                count += len;
+                writer.write_all(default.unwrap().as_ref())?;
+                Ok(count)
             }
-            DataType::Int(layout, default) => (Layout::from(*layout), default),
-            DataType::Float(layout, default) => (Layout::from(*layout), default),
+            DataType::Int(layout, _) => Ok(layout.encode(&mut writer)? + 1u8.encode(&mut writer)?),
+            DataType::Float(layout, default) if default.is_some() => {
+                let mut count = layout.encode(&mut writer)?;
+                count += 1u8.encode(&mut writer)?;
+                let len = layout.bytes() as usize;
+                count += len;
+                writer.write_all(&default.unwrap().as_ref())?;
+                Ok(count)
+            }
+            DataType::Float(layout, _) => {
+                Ok(layout.encode(&mut writer)? + 1u8.encode(&mut writer)?)
+            }
         }
-        .encode(&mut writer)
     }
 }
 
@@ -283,20 +302,42 @@ impl Decode for DataType {
     {
         Ok(match u8::decode(&mut reader)? {
             0xFF => {
-                let data: Vec<u8> = MaxLenWord::decode(&mut reader)?.release();
-                let inner = if data.is_empty() { None } else { Some(data) };
+                let inner = match u8::decode(&mut reader)? {
+                    0 => None,
+                    1 => Some(MaxLenWord::decode(&mut reader)?.release()),
+                    unknown => return Err(DecodeError::InvalidBool(unknown)),
+                };
                 DataType::ByteStr(inner)
             }
 
-            i if i <= 1 => DataType::Int(
-                IntLayout { signed: i == 1, bytes: u16::decode(&mut reader)? },
-                MaybeNumber::decode(&mut reader)?,
-            ),
+            i if i <= 1 => {
+                let bytes = u16::decode(&mut reader)?;
+                let layout = IntLayout { signed: i == 1, bytes };
+                let default = match u8::decode(&mut reader)? {
+                    0 => MaybeNumber::none(),
+                    1 => {
+                        let mut buf = vec![0u8; bytes as usize];
+                        reader.read_exact(&mut buf)?;
+                        Number::with(buf, layout).into()
+                    }
+                    unknown => return Err(DecodeError::InvalidBool(unknown)),
+                };
+                DataType::Int(layout, default)
+            }
 
-            f => DataType::Float(
-                FloatLayout::with(f).ok_or(DecodeError::FloatLayout(f))?,
-                MaybeNumber::decode(&mut reader)?,
-            ),
+            f => {
+                let layout = FloatLayout::with(f).ok_or(DecodeError::FloatLayout(f))?;
+                let default = match u8::decode(&mut reader)? {
+                    0 => MaybeNumber::none(),
+                    1 => {
+                        let mut buf = vec![0u8; layout.bytes() as usize];
+                        reader.read_exact(&mut buf)?;
+                        Number::with(buf, layout).into()
+                    }
+                    unknown => return Err(DecodeError::InvalidBool(unknown)),
+                };
+                DataType::Float(layout, default)
+            }
         })
     }
 }

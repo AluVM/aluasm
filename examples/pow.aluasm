@@ -4,7 +4,7 @@
                     BPDIGEST
 
 .LIBS ; Library reference segment
-                    miner alu1h6eg7npjcrug82j4pacel5l8aju97hvz5f8k6rswe2e9y83x6j4scvulme
+                    miner alu1n75hxxmdmsj5w2ltl5pejlsdyqnkffvqr8ysw237qkdzn5f3zwas5wexu3
 
 .MAIN ; Code segment
                     read s16[1], $input         ; AluRE ISA extension opcode to read
@@ -17,6 +17,6 @@
 done:               succ
 
 .INPUT
-                    $input          "Source data for hash generation"
-                    $difficulty     "Target PoW difficulty level"
-                    $cycle_limit    "Maximum number of cycles"
+    $input: bytes               "Source data for hash generation"
+    $cycle_limit: u16 = 1000    "Maximum number of cycles"
+    $difficulty: u256 = 0x00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF "Target PoW difficulty level"

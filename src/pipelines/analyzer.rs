@@ -11,6 +11,7 @@
 use std::convert::TryFrom;
 use std::str::FromStr;
 
+use aluvm::data::{FloatLayout, IntLayout};
 use aluvm::libs::LibId;
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
@@ -21,6 +22,7 @@ use pest::iterators::Pair;
 
 use crate::ast::{
     Const, FlagSet, IntBase, Libs, Literal, Operand, Operator, Program, Routine, Statement, Var,
+    VarType,
 };
 use crate::issues::{self, Issues, SyntaxError, SyntaxWarning, ToSrc};
 use crate::parser::Rule;
@@ -29,7 +31,7 @@ use crate::LexerError;
 impl<'i> Program<'i> {
     pub fn analyze(
         pair: Pair<'i, Rule>,
-    ) -> Result<(Self, Issues<'i, issues::Syntax>), LexerError<'i>> {
+    ) -> Result<(Self, Issues<'i, issues::Analyze>), LexerError<'i>> {
         let mut issues = Default::default();
         let mut program = Program {
             isae: Default::default(),
@@ -58,7 +60,7 @@ impl<'i> Program<'i> {
     fn analyze_isae(
         &mut self,
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<(), LexerError<'i>> {
         let mut set = bset![];
         for pair in pair.into_inner() {
@@ -87,7 +89,7 @@ impl<'i> Program<'i> {
     fn analyze_routine(
         &mut self,
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<(), LexerError<'i>> {
         let span = pair.as_span();
         let routine = Routine::analyze(pair, issues)?;
@@ -102,7 +104,7 @@ impl<'i> Program<'i> {
     fn analyze_libs(
         &mut self,
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<(), LexerError<'i>> {
         let span = pair.as_span();
         let mut map = bmap! {};
@@ -131,7 +133,7 @@ impl<'i> Program<'i> {
     fn analyze_const(
         &mut self,
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<(), LexerError<'i>> {
         let mut consts = bmap! {};
         for pair in pair.into_inner() {
@@ -150,7 +152,7 @@ impl<'i> Program<'i> {
     fn analyze_input(
         &mut self,
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<(), LexerError<'i>> {
         let mut input = bmap! {};
         for pair in pair.into_inner() {
@@ -170,7 +172,7 @@ impl<'i> Program<'i> {
 trait Analyze<'i> {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>>
     where
         Self: Sized;
@@ -179,7 +181,7 @@ trait Analyze<'i> {
 impl<'i> Analyze<'i> for Routine<'i> {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>> {
         let span = pair.as_span();
         let mut iter = pair.into_inner();
@@ -218,7 +220,7 @@ impl<'i> Analyze<'i> for Routine<'i> {
 impl<'i> Analyze<'i> for Statement<'i> {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>> {
         let span = pair.as_span();
         let mut iter = pair.into_inner();
@@ -274,7 +276,7 @@ impl<'i> Analyze<'i> for Statement<'i> {
 impl<'i> Analyze<'i> for Operand<'i> {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>> {
         let span = pair.as_span();
         Ok(match pair.as_rule() {
@@ -378,7 +380,7 @@ impl<'i> Analyze<'i> for Operand<'i> {
 impl<'i> Analyze<'i> for Literal {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>> {
         let span = pair.as_span();
         let pair =
@@ -480,7 +482,7 @@ fn replace_special_chars(s: &str) -> String {
 impl<'i> Analyze<'i> for Const<'i> {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>> {
         let span = pair.as_span();
         let mut iter = pair.into_inner();
@@ -495,21 +497,68 @@ impl<'i> Analyze<'i> for Const<'i> {
 impl<'i> Analyze<'i> for Var<'i> {
     fn analyze(
         pair: Pair<'i, Rule>,
-        issues: &mut Issues<'i, issues::Syntax>,
+        issues: &mut Issues<'i, issues::Analyze>,
     ) -> Result<Self, LexerError<'i>> {
         let span = pair.as_span();
         let mut iter = pair.into_inner();
         let name =
             iter.next().ok_or_else(|| LexerError::VarNoName(span.to_src()))?.as_str().to_owned();
-        let value = iter.next().ok_or_else(|| LexerError::VarNoDescription(span.to_src()))?;
+        let ty = match iter
+            .next()
+            .ok_or_else(|| LexerError::VarNoType(span.to_src()))?
+            .as_str()
+            .to_lowercase()
+            .as_str()
+        {
+            "bytes" => VarType::Bytes,
+            "str" => VarType::Str,
+            "u8" => VarType::Int(IntLayout::unsigned(1)),
+            "u16" => VarType::Int(IntLayout::unsigned(2)),
+            "u32" => VarType::Int(IntLayout::unsigned(4)),
+            "u64" => VarType::Int(IntLayout::unsigned(8)),
+            "u128" => VarType::Int(IntLayout::unsigned(16)),
+            "u256" => VarType::Int(IntLayout::unsigned(32)),
+            "u512" => VarType::Int(IntLayout::unsigned(64)),
+            "u1024" => VarType::Int(IntLayout::unsigned(128)),
+            "u2048" => VarType::Int(IntLayout::unsigned(256)),
+            "u4096" => VarType::Int(IntLayout::unsigned(512)),
+            "u8192" => VarType::Int(IntLayout::unsigned(1024)),
+            "i8" => VarType::Int(IntLayout::signed(1)),
+            "i16" => VarType::Int(IntLayout::signed(2)),
+            "i32" => VarType::Int(IntLayout::signed(4)),
+            "i64" => VarType::Int(IntLayout::signed(8)),
+            "i128" => VarType::Int(IntLayout::signed(16)),
+            "i256" => VarType::Int(IntLayout::signed(32)),
+            "i512" => VarType::Int(IntLayout::signed(64)),
+            "i1024" => VarType::Int(IntLayout::signed(128)),
+            "f16b" => VarType::Float(FloatLayout::BFloat16),
+            "f16" => VarType::Float(FloatLayout::IeeeHalf),
+            "f32" => VarType::Float(FloatLayout::IeeeSingle),
+            "f64" => VarType::Float(FloatLayout::IeeeDouble),
+            "f80" => VarType::Float(FloatLayout::X87DoubleExt),
+            "f128" => VarType::Float(FloatLayout::IeeeQuad),
+            "f256" => VarType::Float(FloatLayout::IeeeOct),
+            "apfloat" => VarType::Float(FloatLayout::FloatTapered),
+            unknown => return Err(LexerError::VarTypeUnknown(unknown.to_owned(), span.to_src())),
+        };
+        let mut value = iter.next().ok_or_else(|| LexerError::VarNoDescription(span.to_src()))?;
+        let default = match value.as_rule() {
+            Rule::input_default => {
+                let default = Literal::analyze(
+                    value
+                        .into_inner()
+                        .next()
+                        .ok_or_else(|| LexerError::LiteralNoData(span.to_src()))?,
+                    issues,
+                )?;
+                value = iter.next().ok_or_else(|| LexerError::VarNoDescription(span.to_src()))?;
+                Some(default)
+            }
+            _ => None,
+        };
         let value = Literal::analyze(value, issues)?;
         match value {
-            Literal::String(info) => Ok(Var {
-                name,
-                info,
-                span,
-                default: None, // TODO: support defaults in the grammar
-            }),
+            Literal::String(info) => Ok(Var { name, ty, info, default, span }),
             _ => Err(LexerError::VarWrongDescription(span.to_src())),
         }
     }

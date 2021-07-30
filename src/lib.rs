@@ -213,6 +213,10 @@ pub enum LexerError<'i> {
     /// {0}
     VarNoName(Src<'i>),
 
+    /// input variable has no type
+    /// {0}
+    VarNoType(Src<'i>),
+
     /// input variable has no description
     /// {0}
     VarNoDescription(Src<'i>),
@@ -220,6 +224,10 @@ pub enum LexerError<'i> {
     /// input variable description is not a string literal
     /// {0}
     VarWrongDescription(Src<'i>),
+
+    /// unknown variable type `{0}`
+    /// {1}
+    VarTypeUnknown(String, Src<'i>),
 
     /// unable to detect program code
     ProgramAbsent,
@@ -271,6 +279,8 @@ impl<'i> LexerError<'i> {
             LexerError::VarNoDescription(_) => 33,
             LexerError::VarWrongDescription(_) => 34,
             LexerError::ProgramAbsent => 35,
+            LexerError::VarNoType(_) => 36,
+            LexerError::VarTypeUnknown(_, _) => 37,
         }
     }
 }

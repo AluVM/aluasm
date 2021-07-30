@@ -13,7 +13,7 @@ use aluvm::data::encoding::Decode;
 use aluvm::isa::{ControlFlowOp, Instr};
 use aluvm::libs::{Cursor, Lib, LibId, Write};
 
-use crate::issues::{self, Issues, LinkingError, LinkingWarning};
+use crate::issues::{self, Issues, ReferenceError, ReferenceWarning};
 use crate::module::Module;
 use crate::product::{DyBin, DyInner, DyLib, EntryPoint, Product};
 use crate::{BuildError, InstrError, LinkerError};
@@ -28,7 +28,7 @@ impl Module {
         let mut issues = Issues::default();
 
         let entry_point = self.exports.get(".MAIN").copied().unwrap_or_else(|| {
-            issues.push_error_nospan(LinkingError::BinaryNoMain);
+            issues.push_error_nospan(ReferenceError::BinaryNoMain);
             0
         });
 
@@ -46,7 +46,7 @@ impl Module {
         let mut issues = Issues::default();
 
         if self.exports.get(".MAIN").is_some() {
-            issues.push_warning_nospan(LinkingWarning::LibraryWithMain);
+            issues.push_warning_nospan(ReferenceWarning::LibraryWithMain);
         }
 
         let product =
@@ -72,7 +72,7 @@ impl Module {
             let lib = match lib_man.get(libid) {
                 Some(lib) => lib,
                 None => {
-                    issues.push_error_nospan(LinkingError::LibraryAbsent(libid, name.clone()));
+                    issues.push_error_nospan(ReferenceError::LibraryAbsent(libid, name.clone()));
                     continue;
                 }
             };
@@ -80,7 +80,7 @@ impl Module {
             let pos = match lib.exports.get(routine) {
                 Some(pos) => *pos,
                 None => {
-                    issues.push_error_nospan(LinkingError::LibraryNoRoutine {
+                    issues.push_error_nospan(ReferenceError::LibraryNoRoutine {
                         libid,
                         routine: routine.to_owned(),
                         module: name.clone(),

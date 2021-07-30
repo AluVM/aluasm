@@ -67,8 +67,25 @@ var = ${ "$" ~ var_name }
 const_decl = { var ~ "=" ~ lit ~ NEWLINE+ }
 data = { ".CONST" ~ NEWLINE* ~ const_decl* }
 
-input_name = { lit_str }
-input_decl = { var ~ input_name ~ NEWLINE+ }
+input_type_bytes = { ^"bytes" }
+input_type_str = { ^"str" }
+input_type_dim = _{ "8" | "16" | "32" | "64" | "128" | "256" | "512" | "1024" }
+input_type_dimx = _{ input_type_dim | "2048" | "4096" | "8192" }
+input_type_uint = @{ ^"u" ~ input_type_dimx }
+input_type_int = @{ ^"i" ~ input_type_dim }
+input_type_f16 = _{ ^"f16" }
+input_type_f32 = _{ ^"f32" }
+input_type_f64 = _{ ^"f64" }
+input_type_f80 = _{ ^"f80" }
+input_type_f128 = _{ ^"f128" }
+input_type_f256 = _{ ^"f256" }
+input_type_fap = _{ ^"apfloat" }
+input_type_f16b = _{ ^"f16b" }
+input_type_float = { input_type_f16 }
+input_type = _{ ":" ~ (input_type_bytes | input_type_str | input_type_uint | input_type_int | input_type_float) }
+input_default = { "=" ~ lit }
+input_info = { lit_str }
+input_decl = { var ~ input_type ~ input_default? ~ input_info ~ NEWLINE+ }
 input = { ".INPUT" ~ NEWLINE* ~ input_decl* }
 
 segment = _{ isae | routine | libs | data | input }

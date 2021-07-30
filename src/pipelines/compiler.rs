@@ -27,9 +27,11 @@ use amplify::num::u1024;
 use pest::Span;
 use rustc_apfloat::ieee;
 
-use crate::ast::{Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement};
-use crate::issues::{self, CompileError, Issues};
-use crate::module::{CallTable, Module};
+use crate::ast::{
+    Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement, Var, VarType,
+};
+use crate::issues::{self, Issues, SemanticError};
+use crate::module::{CallTable, DataType, Module, Variable};
 use crate::{CompilerError, InstrError};
 
 impl<'i> Program<'i> {
@@ -52,7 +54,11 @@ impl<'i> Program<'i> {
             |mut map, (name, routine)| -> Result<_, CompilerError> {
                 let code =
                     routine.compile(&mut cursor, self, &mut call_table, dump, &mut issues)?;
-                map.insert(name.clone(), code);
+                if map.len() > u16::MAX as usize {
+                    issues.push_error(SemanticError::RoutinesOverflow, &routine.span);
+                } else {
+                    map.insert(name.clone(), code);
+                }
                 Ok(map)
             },
         )?;
@@ -78,7 +84,7 @@ impl<'i> Program<'i> {
                     let posmap = match routine_map.get(&routine_name) {
                         Some(map) => map,
                         None => {
-                            issues.push_error(CompileError::RoutineUnknown(routine_name), &span);
+                            issues.push_error(SemanticError::RoutineUnknown(routine_name), &span);
                             continue;
                         }
                     };
@@ -99,19 +105,10 @@ impl<'i> Program<'i> {
             }
         }
 
-        // TODO: Collect inputs
-        let vars = vec![];
-        /*
-        let input = self.input.values().map(|v| {
-            Input {
-                name: v.name.clone(),
-                details: v.info.clone(),
-                data: match v {
-
-                }
-            }
-        }).collect();
-         */
+        let mut vars = vec![];
+        for (_, v) in &self.input {
+            vars.push(v.compile(&mut issues)?);
+        }
 
         let exports = routine_map
             .iter()
@@ -126,12 +123,86 @@ impl<'i> Program<'i> {
     }
 }
 
+impl<'i> Var<'i> {
+    pub fn compile(
+        &'i self,
+        issues: &mut Issues<'i, issues::Compile>,
+    ) -> Result<Variable, CompilerError> {
+        let mut info = self.info.clone();
+        if info.bytes().len() > u16::MAX as usize {
+            issues.push_error(
+                SemanticError::VarNameLongInfo(self.name.clone(), info.bytes().len()),
+                &self.span,
+            );
+            info = String::from_utf8(info.as_bytes()[0..u16::MAX as usize].to_vec())
+                .map_err(|err| {
+                    issues.push_error(
+                        SemanticError::VarInfoNotUtf8(self.name.clone(), err),
+                        &self.span,
+                    );
+                })
+                .unwrap_or_default();
+        }
+
+        let data = match (self.ty, &self.default) {
+            (VarType::Int(layout), None) => DataType::Int(layout, MaybeNumber::none()),
+            (VarType::Float(layout), None) => DataType::Float(layout, MaybeNumber::none()),
+            (VarType::Bytes | VarType::Str, None) => DataType::ByteStr(None),
+            (VarType::Int(layout), Some(Literal::Int(val, _))) => {
+                let mut default = MaybeNumber::from(val);
+                default.reshape(layout.into());
+                DataType::Int(layout, default)
+            }
+            (VarType::Float(layout), Some(Literal::Float(m, r, e))) => {
+                let float = ieee::Quad::from_str(&format!("{}.{}e{}", m, r, e))
+                    .map_err(|err| CompilerError::FloatConstruction(*m, *r, *e, err))?;
+                let mut default = MaybeNumber::from(float);
+                default.reshape(layout.into());
+                DataType::Float(layout, default)
+            }
+            (VarType::Bytes, Some(Literal::String(s)))
+            | (VarType::Str, Some(Literal::String(s))) => {
+                DataType::ByteStr(Some(s.as_bytes().to_vec()))
+            }
+            (VarType::Bytes, Some(Literal::Int(val, _))) => {
+                DataType::ByteStr(Some(val.to_be_bytes().to_vec()))
+            }
+            (VarType::Str, Some(Literal::Int(val, _))) => DataType::ByteStr(Some(
+                String::from_utf8(val.to_be_bytes().to_vec())
+                    .map_err(|err| {
+                        issues.push_error(
+                            SemanticError::VarValueNotUtf8(self.name.clone(), err),
+                            &self.span,
+                        );
+                    })
+                    .unwrap_or_default()
+                    .as_bytes()
+                    .to_vec(),
+            )),
+            (VarType::Int(layout), _) => {
+                issues.push_error(SemanticError::VarWrongDefault(self.name.clone()), &self.span);
+                DataType::Int(layout, MaybeNumber::none())
+            }
+            (VarType::Float(layout), _) => {
+                issues.push_error(SemanticError::VarWrongDefault(self.name.clone()), &self.span);
+                DataType::Float(layout, MaybeNumber::none())
+            }
+            (VarType::Str | VarType::Bytes, _) => {
+                issues.push_error(SemanticError::VarWrongDefault(self.name.clone()), &self.span);
+                DataType::ByteStr(None)
+            }
+        };
+
+        Ok(Variable { info, data })
+    }
+}
+
 impl<'i> Routine<'i> {
     pub fn compile(
         &'i self,
         cursor: &mut (impl Read + Write),
         program: &'i Program,
-        lib_refs: &mut CallTable,
+        call_table: &mut CallTable,
         dump: &mut Option<File>,
         issues: &mut Issues<'i, issues::Compile>,
     ) -> Result<Vec<u16>, CompilerError> {
@@ -142,7 +213,7 @@ impl<'i> Routine<'i> {
         for (no, statement) in self.statements.iter().enumerate() {
             let pos = cursor.pos();
             instr_map.push(pos);
-            let instr = statement.compile(program, lib_refs, issues)?;
+            let instr = statement.compile(program, call_table, issues)?;
             if let Err(err) = instr.write(cursor) {
                 issues.push_error(err.into(), &statement.span);
                 break;
@@ -156,7 +227,7 @@ impl<'i> Routine<'i> {
             }
             match instr {
                 Instr::ControlFlow(ControlFlowOp::Call(site) | ControlFlowOp::Exec(site)) => {
-                    lib_refs.get_mut(site)?.sites.insert(pos);
+                    call_table.get_mut(site)?.sites.insert(pos);
                 }
                 _ => {}
             };
@@ -210,7 +281,7 @@ impl<'i> Statement<'i> {
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        CompileError::OperandWrongType {
+                        SemanticError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: T::description(),
@@ -222,7 +293,7 @@ impl<'i> Statement<'i> {
             })
             .unwrap_or_else(|| {
                 issues.push_error(
-                    CompileError::OperandMissed {
+                    SemanticError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: T::description(),
@@ -233,7 +304,7 @@ impl<'i> Statement<'i> {
             });
         operand.try_into().unwrap_or_else(|_| {
             issues.push_error(
-                CompileError::OperandWrongReg {
+                SemanticError::OperandWrongReg {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: T::description(),
@@ -258,7 +329,7 @@ impl<'i> Statement<'i> {
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        CompileError::OperandWrongType {
+                        SemanticError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: T::description(),
@@ -270,7 +341,7 @@ impl<'i> Statement<'i> {
             })
             .unwrap_or_else(|| {
                 issues.push_error(
-                    CompileError::OperandMissed {
+                    SemanticError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: T::description(),
@@ -281,7 +352,7 @@ impl<'i> Statement<'i> {
             });
         operand.try_into().unwrap_or_else(|_| {
             issues.push_error(
-                CompileError::OperandWrongReg {
+                SemanticError::OperandWrongReg {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: T::description(),
@@ -316,7 +387,7 @@ impl<'i> Statement<'i> {
             operand
         } else {
             issues.push_error(
-                CompileError::OperandMissed {
+                SemanticError::OperandMissed {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: "constant or number literal",
@@ -336,7 +407,7 @@ impl<'i> Statement<'i> {
                 let val = match consts.get(name) {
                     Some(val) => val,
                     None => {
-                        issues.push_error(CompileError::ConstUnknown(name.clone()), span);
+                        issues.push_error(SemanticError::ConstUnknown(name.clone()), span);
                         return Ok(MaybeNumber::none());
                     }
                 };
@@ -348,7 +419,7 @@ impl<'i> Statement<'i> {
                     ),
                     lit => {
                         issues.push_error(
-                            CompileError::ConstWrongType {
+                            SemanticError::ConstWrongType {
                                 name: name.clone(),
                                 expected: "integer or float",
                                 found: lit.description(),
@@ -361,7 +432,7 @@ impl<'i> Statement<'i> {
             }
             op => {
                 issues.push_error(
-                    CompileError::OperandWrongType {
+                    SemanticError::OperandWrongType {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "constant or number literal",
@@ -385,7 +456,7 @@ impl<'i> Statement<'i> {
             operand
         } else {
             issues.push_error(
-                CompileError::OperandMissed {
+                SemanticError::OperandMissed {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: "constant or number literal",
@@ -401,7 +472,7 @@ impl<'i> Statement<'i> {
                 let val = match consts.get(name) {
                     Some(val) => val,
                     None => {
-                        issues.push_error(CompileError::ConstUnknown(name.clone()), span);
+                        issues.push_error(SemanticError::ConstUnknown(name.clone()), span);
                         return Ok(ByteStr::default());
                     }
                 };
@@ -409,7 +480,7 @@ impl<'i> Statement<'i> {
                     Literal::String(s) => ByteStr::with(s),
                     lit => {
                         issues.push_error(
-                            CompileError::ConstWrongType {
+                            SemanticError::ConstWrongType {
                                 name: name.clone(),
                                 expected: "string literal",
                                 found: lit.description(),
@@ -422,7 +493,7 @@ impl<'i> Statement<'i> {
             }
             op => {
                 issues.push_error(
-                    CompileError::OperandWrongType {
+                    SemanticError::OperandWrongType {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "constant or string literal",
@@ -445,7 +516,7 @@ impl<'i> Statement<'i> {
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        CompileError::OperandWrongType {
+                        SemanticError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: "goto statement",
@@ -457,7 +528,7 @@ impl<'i> Statement<'i> {
             })
             .or_else(|| {
                 issues.push_error(
-                    CompileError::OperandMissed {
+                    SemanticError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "goto statement",
@@ -482,7 +553,7 @@ impl<'i> Statement<'i> {
                 | Operand::Lit(_, span)
                 | Operand::Call { span, .. } => {
                     issues.push_error(
-                        CompileError::OperandWrongType {
+                        SemanticError::OperandWrongType {
                             operator: self.operator.0,
                             pos: no + 1,
                             expected: "routine call statement",
@@ -494,7 +565,7 @@ impl<'i> Statement<'i> {
             })
             .or_else(|| {
                 issues.push_error(
-                    CompileError::OperandMissed {
+                    SemanticError::OperandMissed {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: "routine call statement",
@@ -509,14 +580,14 @@ impl<'i> Statement<'i> {
         &'i self,
         no: u8,
         program: &'i Program,
-        frame: &mut CallTable,
+        call_table: &mut CallTable,
         issues: &mut Issues<'i, issues::Compile>,
     ) -> LibSite {
         let operand = if let Some(operand) = self.operands.get(no as usize) {
             operand
         } else {
             issues.push_error(
-                CompileError::OperandMissed {
+                SemanticError::OperandMissed {
                     operator: self.operator.0,
                     pos: no + 1,
                     expected: "external call statement",
@@ -529,10 +600,10 @@ impl<'i> Statement<'i> {
         match operand {
             Operand::Call { lib, routine, span } => {
                 let id = program.libs.map.get(lib).copied().unwrap_or_else(|| {
-                    issues.push_error(CompileError::LibUnknown(lib.clone()), span);
+                    issues.push_error(SemanticError::LibUnknown(lib.clone()), span);
                     LibId::default()
                 });
-                match frame.find_or_insert(id, routine) {
+                match call_table.find_or_insert(id, routine) {
                     Ok(pos) => return LibSite::with(pos, id),
                     Err(err) => {
                         issues.push_error(err.into(), span);
@@ -542,7 +613,7 @@ impl<'i> Statement<'i> {
             }
             op => {
                 issues.push_error(
-                    CompileError::OperandWrongType {
+                    SemanticError::OperandWrongType {
                         operator: self.operator.0,
                         pos: no + 1,
                         expected: op.description(),
@@ -557,7 +628,7 @@ impl<'i> Statement<'i> {
     pub fn compile(
         &'i self,
         program: &'i Program,
-        lib_refs: &mut CallTable,
+        call_table: &mut CallTable,
         issues: &mut Issues<'i, issues::Compile>,
     ) -> Result<Instr, CompilerError> {
         macro_rules! reg {
@@ -582,7 +653,7 @@ impl<'i> Statement<'i> {
         }
         macro_rules! lib {
             ($no:expr) => {
-                self.lib($no, program, lib_refs, issues)
+                self.lib($no, program, call_table, issues)
             };
         }
         macro_rules! flags {
@@ -624,7 +695,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -638,7 +709,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -668,7 +739,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -678,7 +749,7 @@ impl<'i> Statement<'i> {
                     RegAll::S => Instr::Bytes(BytesOp::Swp(idx! {0}, idx! {1})),
                     _ => {
                         issues.push_error(
-                            CompileError::OperandWrongReg {
+                            SemanticError::OperandWrongReg {
                                 operator: Operator::mov,
                                 pos: 0,
                                 expected: "register S",
@@ -695,7 +766,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -713,7 +784,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -727,7 +798,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -760,7 +831,7 @@ impl<'i> Statement<'i> {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
                     if step > u1024::from(i16::MAX as u16) {
                         step = u1024::from(1u64);
-                        issues.push_error(CompileError::StepTooLarge(self.operator.0), span);
+                        issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
@@ -771,7 +842,7 @@ impl<'i> Statement<'i> {
                     let reg = reg! {0};
                     if reg != reg! {1} {
                         issues.push_error(
-                            CompileError::OperandRegMutBeEqual(self.operator.0),
+                            SemanticError::OperandRegMutBeEqual(self.operator.0),
                             self.operands[1].as_span(),
                         );
                     }
@@ -789,7 +860,7 @@ impl<'i> Statement<'i> {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
                     if step > u1024::from(i16::MAX as u16) {
                         step = u1024::from(1u64);
-                        issues.push_error(CompileError::StepTooLarge(self.operator.0), span);
+                        issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
@@ -800,7 +871,7 @@ impl<'i> Statement<'i> {
                     let reg = reg! {0};
                     if reg != reg! {1} {
                         issues.push_error(
-                            CompileError::OperandRegMutBeEqual(self.operator.0),
+                            SemanticError::OperandRegMutBeEqual(self.operator.0),
                             self.operands[1].as_span(),
                         );
                     }
@@ -818,7 +889,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -835,7 +906,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -859,13 +930,13 @@ impl<'i> Statement<'i> {
                 let reg: RegAR = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
                 if reg != reg! {2} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[2].as_span(),
                     );
                 }
@@ -875,13 +946,13 @@ impl<'i> Statement<'i> {
                 let reg: RegAR = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
                 if reg != reg! {2} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[2].as_span(),
                     );
                 }
@@ -891,13 +962,13 @@ impl<'i> Statement<'i> {
                 let reg: RegAR = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
                 if reg != reg! {2} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[2].as_span(),
                     );
                 }
@@ -921,7 +992,7 @@ impl<'i> Statement<'i> {
                 }
                 _ => {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 0,
                             expected: "register S",
@@ -940,7 +1011,7 @@ impl<'i> Statement<'i> {
                 let reg3: RegA = reg! {3};
                 if reg1 != RegA::A16 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 1,
                             expected: "a16 register",
@@ -950,7 +1021,7 @@ impl<'i> Statement<'i> {
                 }
                 if reg2 != RegA::A16 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "a16 register",
@@ -960,7 +1031,7 @@ impl<'i> Statement<'i> {
                 }
                 if reg3 != RegA::A8 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 3,
                             expected: "a8 register",
@@ -980,7 +1051,7 @@ impl<'i> Statement<'i> {
                 let reg2: RegA = reg! {2};
                 if reg1 != RegA::A8 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 1,
                             expected: "a8 register",
@@ -990,7 +1061,7 @@ impl<'i> Statement<'i> {
                 }
                 if reg2 != RegA::A16 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "a16 register",
@@ -1007,7 +1078,7 @@ impl<'i> Statement<'i> {
                     let reg: RegA = reg! {n+1};
                     if reg != RegA::A16 {
                         issues.push_error(
-                            CompileError::OperandWrongReg {
+                            SemanticError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: n,
                                 expected: "a16 register",
@@ -1025,7 +1096,7 @@ impl<'i> Statement<'i> {
                 let idx: Reg32 = idx! {3};
                 if reg != RegA::A16 || idx != Reg32::Reg1 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 3,
                             expected: "a16[0] register",
@@ -1040,7 +1111,7 @@ impl<'i> Statement<'i> {
                 let reg = reg! {0};
                 if reg != reg! {1} {
                     issues.push_error(
-                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        SemanticError::OperandRegMutBeEqual(self.operator.0),
                         self.operands[1].as_span(),
                     );
                 }
@@ -1051,7 +1122,7 @@ impl<'i> Statement<'i> {
                 let reg: RegA = reg! {2};
                 if reg != RegA::A16 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "a16 register",
@@ -1074,7 +1145,7 @@ impl<'i> Statement<'i> {
                 let reg: RegA = reg! {1};
                 if reg != RegA::A16 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 1,
                             expected: "a16[0] register",
@@ -1090,7 +1161,7 @@ impl<'i> Statement<'i> {
                 let reg: RegA = reg! {2};
                 if reg != RegA::A16 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "a16[0] register",
@@ -1109,7 +1180,7 @@ impl<'i> Statement<'i> {
                 let reg: RegR = reg! {1};
                 if reg != RegR::R160 {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "r160 register",
@@ -1125,7 +1196,7 @@ impl<'i> Statement<'i> {
                 RegR::R512 => Instr::Digest(DigestOp::Sha512(idx! {0}, idx! {1})),
                 _ => {
                     issues.push_error(
-                        CompileError::OperandWrongReg {
+                        SemanticError::OperandWrongReg {
                             operator: self.operator.0,
                             pos: 2,
                             expected: "r256 or r512 registers",
@@ -1142,7 +1213,7 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != [RegR::R256, RegR::R512][r as usize] {
                         issues.push_error(
-                            CompileError::OperandWrongReg {
+                            SemanticError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: if r == 0 { "r256 register" } else { "r512 register" },
@@ -1159,7 +1230,7 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != RegR::R512 {
                         issues.push_error(
-                            CompileError::OperandWrongReg {
+                            SemanticError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: "r512 register",
@@ -1176,7 +1247,7 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != RegR::R512 {
                         issues.push_error(
-                            CompileError::OperandWrongReg {
+                            SemanticError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: "r512 register",
@@ -1193,7 +1264,7 @@ impl<'i> Statement<'i> {
                     let reg: RegR = reg! {r};
                     if reg != RegR::R512 {
                         issues.push_error(
-                            CompileError::OperandWrongReg {
+                            SemanticError::OperandWrongReg {
                                 operator: self.operator.0,
                                 pos: r + 1,
                                 expected: "r512 register",

@@ -12,6 +12,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::str::FromStr;
 
+use aluvm::data::{FloatLayout, IntLayout};
 use aluvm::libs::LibId;
 use aluvm::reg::{Reg32, RegAll};
 use aluvm::Isa;
@@ -41,11 +42,20 @@ pub struct Const<'i> {
     pub span: Span<'i>,
 }
 
+#[derive(Copy, Clone, Hash, Debug)]
+pub enum VarType {
+    Bytes,
+    Str,
+    Int(IntLayout),
+    Float(FloatLayout),
+}
+
 #[derive(Clone, Hash, Debug)]
 pub struct Var<'i> {
     pub name: String,
-    pub info: String,
+    pub ty: VarType,
     pub default: Option<Literal>,
+    pub info: String,
     pub span: Span<'i>,
 }
 
@@ -125,6 +135,7 @@ pub enum Literal {
     Int(u1024, IntBase),
     Float(u128, u128, u16),
     String(String),
+    Bytes(Vec<u8>),
     Char(u8),
 }
 
@@ -135,6 +146,7 @@ impl Literal {
             Literal::Float(_, _, _) => "float literal",
             Literal::String(_) => "string literal",
             Literal::Char(_) => "char literal",
+            Literal::Bytes(_) => "bytes literal",
         }
     }
 }

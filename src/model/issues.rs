@@ -6,6 +6,7 @@
 // for Pandora Core AG
 
 use std::fmt::{self, Debug, Display, Formatter, Write};
+use std::string::FromUtf8Error;
 
 use aluvm::isa::{BytecodeError, ParseFlagError};
 use aluvm::libs::{LibId, LibIdError, LibSegOverflow, WriteError};
@@ -29,25 +30,25 @@ pub trait Stage {
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
-pub struct Syntax;
+pub struct Analyze;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
 pub struct Compile;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
 pub struct Linking;
 
-impl Stage for Syntax {
+impl Stage for Analyze {
     type Error = SyntaxError;
     type Warning = SyntaxWarning;
 }
 
 impl Stage for Compile {
-    type Error = CompileError;
-    type Warning = CompileWarning;
+    type Error = SemanticError;
+    type Warning = SemanticWarning;
 }
 
 impl Stage for Linking {
-    type Error = LinkingError;
-    type Warning = LinkingWarning;
+    type Error = ReferenceError;
+    type Warning = ReferenceWarning;
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
@@ -93,9 +94,9 @@ pub enum SyntaxError {
     RepeatedVarName(String),
 }
 
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
+#[derive(Clone, Debug, Display, Error, From)]
 #[display(doc_comments)]
-pub enum CompileError {
+pub enum SemanticError {
     /// operator `{operator}` requires {expected} as {pos} operand
     OperandWrongType { operator: Operator, pos: u8, expected: &'static str },
 
@@ -146,11 +147,30 @@ pub enum CompileError {
 
     /// call to an unknown routine `{0}`
     RoutineUnknown(String),
+
+    /// number of routines in single module exceeds maximal value
+    RoutinesOverflow,
+
+    /// input variable `{0}` information is too long ({1})
+    VarNameLongInfo(String, usize),
+
+    /// default value for input variable `{0}` does not match variable type
+    VarWrongDefault(String),
+
+    /// variable description for `{0}` is not a valid UTF-8 string
+    ///
+    /// details: {1}
+    VarInfoNotUtf8(String, FromUtf8Error),
+
+    /// variable default value for `{0}` is not a valid UTF-8 string
+    ///
+    /// details: {1}
+    VarValueNotUtf8(String, FromUtf8Error),
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
-pub enum LinkingError {
+pub enum ReferenceError {
     /// building binary requires `.MAIN` routine to be present in the object file
     BinaryNoMain,
 
@@ -190,37 +210,42 @@ impl Issue for SyntaxError {
     fn is_error(&self) -> bool { true }
 }
 
-impl Issue for CompileError {
+impl Issue for SemanticError {
     fn errno(&self) -> u16 {
         match self {
-            CompileError::OperandWrongType { .. } => 4001,
-            CompileError::OperandWrongReg { .. } => 4002,
-            CompileError::OperandMissed { .. } => 4003,
-            CompileError::OperatorWrongFlag(..) => 4004,
-            CompileError::OperatorRequiresFlag(..) => 4005,
-            CompileError::FlagError(err) => match err {
+            SemanticError::OperandWrongType { .. } => 4001,
+            SemanticError::OperandWrongReg { .. } => 4002,
+            SemanticError::OperandMissed { .. } => 4003,
+            SemanticError::OperatorWrongFlag(..) => 4004,
+            SemanticError::OperatorRequiresFlag(..) => 4005,
+            SemanticError::FlagError(err) => match err {
                 ParseFlagError::UnknownFlag(_, _) => 4006,
                 ParseFlagError::UnknownFlags(_, _) => 4007,
                 ParseFlagError::MutuallyExclusiveFlags(_, _, _) => 4008,
                 ParseFlagError::RequiredFlagAbsent(_) => 4009,
                 ParseFlagError::DuplicatedFlags(_, _) => 4010,
             },
-            CompileError::OperandRegMutBeEqual(_) => 4011,
-            CompileError::CodeLengthOverflow => 4012,
-            CompileError::DataLengthOverflow => 4013,
-            CompileError::LibsLengthOverflow => 4014,
-            CompileError::StepTooLarge(_) => 4015,
-            CompileError::ConstUnknown(_) => 4016,
-            CompileError::ConstWrongType { .. } => 4017,
-            CompileError::LibUnknown(_) => 4018,
-            CompileError::LibError(err) => match err {
+            SemanticError::OperandRegMutBeEqual(_) => 4011,
+            SemanticError::CodeLengthOverflow => 4012,
+            SemanticError::DataLengthOverflow => 4013,
+            SemanticError::LibsLengthOverflow => 4014,
+            SemanticError::StepTooLarge(_) => 4015,
+            SemanticError::ConstUnknown(_) => 4016,
+            SemanticError::ConstWrongType { .. } => 4017,
+            SemanticError::LibUnknown(_) => 4018,
+            SemanticError::LibError(err) => match err {
                 CallTableError::LibNotFound(_) => 4019,
                 CallTableError::TooManyRoutines => 4020,
                 CallTableError::LibTableNotFound(_) => 4021,
                 CallTableError::RoutineNotFound(_, _) => 4022,
                 CallTableError::TooManyLibs => 4023,
             },
-            CompileError::RoutineUnknown(_) => 4024,
+            SemanticError::RoutineUnknown(_) => 4024,
+            SemanticError::RoutinesOverflow => 4025,
+            SemanticError::VarNameLongInfo(_, _) => 4026,
+            SemanticError::VarWrongDefault(_) => 4027,
+            SemanticError::VarInfoNotUtf8(_, _) => 4028,
+            SemanticError::VarValueNotUtf8(_, _) => 4029,
         }
     }
 
@@ -228,13 +253,13 @@ impl Issue for CompileError {
     fn is_error(&self) -> bool { true }
 }
 
-impl Issue for LinkingError {
+impl Issue for ReferenceError {
     fn errno(&self) -> u16 {
         match self {
-            LinkingError::BinaryNoMain => 8001,
-            LinkingError::LibraryAbsent(_, _) => 8003,
-            LinkingError::LibraryNoRoutine { .. } => 8004,
-            LinkingError::ModulesNoRoutine { .. } => 8005,
+            ReferenceError::BinaryNoMain => 8001,
+            ReferenceError::LibraryAbsent(_, _) => 8003,
+            ReferenceError::LibraryNoRoutine { .. } => 8004,
+            ReferenceError::ModulesNoRoutine { .. } => 8005,
             // continue from 8007
         }
     }
@@ -243,20 +268,20 @@ impl Issue for LinkingError {
     fn is_error(&self) -> bool { true }
 }
 
-impl From<BytecodeError> for CompileError {
+impl From<BytecodeError> for SemanticError {
     fn from(err: BytecodeError) -> Self {
         match err {
             BytecodeError::Write(err) => match err {
-                WriteError::CodeNotFittingSegment => CompileError::CodeLengthOverflow,
-                WriteError::DataExceedsLimit(_) => CompileError::DataLengthOverflow,
-                WriteError::DataNotFittingSegment => CompileError::DataLengthOverflow,
-                WriteError::LibAbsent(_) => CompileError::OperandWrongType {
+                WriteError::CodeNotFittingSegment => SemanticError::CodeLengthOverflow,
+                WriteError::DataExceedsLimit(_) => SemanticError::DataLengthOverflow,
+                WriteError::DataNotFittingSegment => SemanticError::DataLengthOverflow,
+                WriteError::LibAbsent(_) => SemanticError::OperandWrongType {
                     operator: Operator::call,
                     pos: 0,
                     expected: "must be a valid library reference",
                 },
             },
-            BytecodeError::PutNoNumber => CompileError::OperandWrongType {
+            BytecodeError::PutNoNumber => SemanticError::OperandWrongType {
                 operator: Operator::put,
                 pos: 0,
                 expected: "must be a number literal or constant reference",
@@ -274,11 +299,11 @@ pub enum SyntaxWarning {
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display)]
 #[display(doc_comments)]
-pub enum CompileWarning {}
+pub enum SemanticWarning {}
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
 #[display(doc_comments)]
-pub enum LinkingWarning {
+pub enum ReferenceWarning {
     /// building library from an object file containing `.MAIN` routine; consider building binary
     /// by using --bin option
     LibraryWithMain,
@@ -298,18 +323,18 @@ impl Issue for SyntaxWarning {
     fn is_error(&self) -> bool { false }
 }
 
-impl Issue for CompileWarning {
+impl Issue for SemanticWarning {
     fn errno(&self) -> u16 { 0 }
 
     #[inline]
     fn is_error(&self) -> bool { false }
 }
 
-impl Issue for LinkingWarning {
+impl Issue for ReferenceWarning {
     fn errno(&self) -> u16 {
         match self {
-            LinkingWarning::LibraryWithMain => 8002,
-            LinkingWarning::LibraryNotUsed(_) => 8006,
+            ReferenceWarning::LibraryWithMain => 8002,
+            ReferenceWarning::LibraryNotUsed(_) => 8006,
         }
     }
 
