@@ -25,7 +25,7 @@ pub use pipelines::{analyzer, compiler, linker, parser};
 use rustc_apfloat::ParseError;
 
 use crate::issues::Src;
-use crate::module::{CallTableError, ModuleError};
+use crate::module::CallTableError;
 use crate::parser::Rule;
 
 #[derive(Debug, Display, Error, From)]
@@ -341,7 +341,7 @@ impl From<CompilerError> for MainError {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Display, Error)]
 #[display(doc_comments)]
 pub enum LinkerError {
     /// code segment size {0} exceeds maximal limit of 2^16 bytes
@@ -349,6 +349,12 @@ pub enum LinkerError {
 
     /// data segment size {0} exceeds maximal limit of 2^16 bytes
     DataSegmentOversized(usize),
+
+    /// unable to read instruction at position {0}
+    InstrRead(u16),
+
+    /// instruction at position {0} has changed from `{1}` into `{2}`
+    InstrChanged(u16, &'static str, Instr),
 }
 
 impl LinkerError {
@@ -356,6 +362,15 @@ impl LinkerError {
         match self {
             LinkerError::CodeSegmentOversized(_) => 1,
             LinkerError::DataSegmentOversized(_) => 2,
+            LinkerError::InstrRead(_) => 3,
+            LinkerError::InstrChanged(_, _, _) => 4,
+        }
+    }
+
+    pub fn with(err: InstrError, pos: u16) -> Self {
+        match err {
+            InstrError::Read => LinkerError::InstrRead(pos),
+            InstrError::Changed(from, to) => LinkerError::InstrChanged(pos, from, to),
         }
     }
 }

@@ -7,9 +7,10 @@
 
 use std::fs;
 use std::fs::File;
-use std::path::{Components, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 
+use aluasm::linker::LibManager;
 use aluasm::module::Module;
 use aluasm::{BuildError, MainError};
 use aluvm::data::encoding::{Decode, Encode};
@@ -93,7 +94,7 @@ impl Args {
 }
 
 fn main() {
-    let mut args: Args = Args::parse().processed();
+    let args: Args = Args::parse().processed();
 
     link(&args).unwrap_or_else(|err| {
         eprintln!("{}\n", err);
@@ -112,10 +113,12 @@ fn link(args: &Args) -> Result<(), MainError> {
     path.set_extension("ao");
     let (module, module_name) = read_object(&path, &args)?;
 
+    let mut manager = LibManager::new(&args.lib_dir);
+
     let (product, issues) = if args.bin {
-        module.link_bin(product_name.clone(), org_name.clone())?
+        module.link_bin(product_name.clone(), org_name.clone(), &mut manager)?
     } else {
-        module.link_lib(product_name.clone(), org_name.clone())?
+        module.link_lib(product_name.clone(), org_name.clone(), &mut manager)?
     };
 
     if issues.has_errors() {

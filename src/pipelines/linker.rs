@@ -6,20 +6,25 @@
 // for Pandora Core AG
 
 use std::borrow::Borrow;
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
+use std::path::{Path, PathBuf};
 
 use aluvm::data::ByteStr;
+use aluvm::isa::{ControlFlowOp, Instr};
+use aluvm::libs::{Cursor, LibId, Write};
 
 use crate::issues::{self, Issues, LinkingError, LinkingWarning};
 use crate::module::Module;
-use crate::product::{EntryPoint, Product};
-use crate::LinkerError;
+use crate::product::{DyBin, DyInner, DyLib, EntryPoint, Product};
+use crate::{InstrError, LinkerError};
 
 impl Module {
     pub fn link_bin(
         &self,
         name: String,
         org: String,
+        lib_man: &mut LibManager,
     ) -> Result<(Product, Issues<issues::Linking>), LinkerError> {
         let mut issues = Issues::default();
 
@@ -28,7 +33,8 @@ impl Module {
             0
         });
 
-        let product = self.link(name, org, EntryPoint::BinMain(entry_point), &mut issues)?;
+        let product =
+            self.link(name, org, EntryPoint::BinMain(entry_point), lib_man, &mut issues)?;
         Ok((product, issues))
     }
 
@@ -36,6 +42,7 @@ impl Module {
         &self,
         name: String,
         org: String,
+        lib_man: &mut LibManager,
     ) -> Result<(Product, Issues<issues::Linking>), LinkerError> {
         let mut issues = Issues::default();
 
@@ -43,10 +50,8 @@ impl Module {
             issues.push_warning_nospan(LinkingWarning::LibraryWithMain);
         }
 
-        // TODO: Generate table;
-        let mut table = bmap! {};
-
-        let product = self.link(name, org, EntryPoint::LibTable(table), &mut issues)?;
+        let product =
+            self.link(name, org, EntryPoint::LibTable(self.exports.clone()), lib_man, &mut issues)?;
         Ok((product, issues))
     }
 
@@ -55,6 +60,7 @@ impl Module {
         name: String,
         org: String,
         entry_point: EntryPoint,
+        lib_man: &mut LibManager,
         issues: &mut Issues<issues::Linking>,
     ) -> Result<Product, LinkerError> {
         let isae = self.isae.clone();
@@ -65,10 +71,69 @@ impl Module {
         let libs = self.libs.clone();
         let vars = self.vars.clone();
 
-        for (lib, routine, map) in self.imports.call_refs() {
-            issues.push_error_nospan(LinkingError::LibraryAbsent(lib, name.clone()));
+        for (libid, routine, map) in self.imports.call_refs() {
+            let lib = match lib_man.get(libid) {
+                Some(lib) => lib,
+                None => {
+                    issues.push_error_nospan(LinkingError::LibraryAbsent(libid, name.clone()));
+                    continue;
+                }
+            };
+
+            let pos = match lib.exports.get(routine) {
+                Some(pos) => *pos,
+                None => {
+                    issues.push_error_nospan(LinkingError::LibraryNoRoutine {
+                        libid,
+                        routine: routine.to_owned(),
+                        module: name.clone(),
+                    });
+                    continue;
+                }
+            };
+
+            let mut code = self.code.clone();
+            let mut cursor = Cursor::with(&mut code, self.data.clone(), &self.libs);
+            for p in map {
+                cursor
+                    .edit(*p, |instr| match instr {
+                        Instr::ControlFlow(
+                            ControlFlowOp::Call(ref mut site) | ControlFlowOp::Exec(ref mut site),
+                        ) => {
+                            site.pos = pos;
+                            Ok(())
+                        }
+                        _ => Err(InstrError::Changed("call", instr.clone())),
+                    })
+                    .map_err(|err| LinkerError::with(err, pos))?;
+            }
         }
 
-        Ok(Product { name, org, isae, code, data, libs, vars, entry_point })
+        let inner = DyInner { name, org, isae, code, data, libs, vars };
+        Ok(match entry_point {
+            EntryPoint::LibTable(exports) => Product::Lib(DyLib { inner, exports }),
+            EntryPoint::BinMain(entry_point) => Product::Bin(DyBin { inner, entry_point }),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct LibManager {
+    map: BTreeMap<LibId, PathBuf>,
+    cache: BTreeMap<LibId, DyLib>,
+}
+
+impl LibManager {
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        // TODO:
+        LibManager { map: bmap! {}, cache: bmap! {} }
+    }
+
+    pub fn get(&mut self, id: LibId) -> Option<&DyLib> {
+        if let Some(lib) = self.cache.get(&id) {
+            return Some(lib);
+        }
+        // TODO:
+        None
     }
 }

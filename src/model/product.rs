@@ -23,17 +23,6 @@ pub enum EntryPoint {
     BinMain(u16),
 }
 
-impl Encode for EntryPoint {
-    type Error = EncodeError;
-
-    fn encode(&self, writer: impl Write) -> Result<usize, Self::Error> {
-        match self {
-            EntryPoint::BinMain(entry) => entry.encode(writer).map_err(EncodeError::from),
-            EntryPoint::LibTable(table) => MaxLenWord::new(table).encode(writer),
-        }
-    }
-}
-
 impl Display for EntryPoint {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -49,7 +38,7 @@ impl Display for EntryPoint {
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct Product {
+pub struct DyInner {
     pub name: String,
     pub org: String,
     pub isae: String,
@@ -57,10 +46,27 @@ pub struct Product {
     pub data: ByteStr,
     pub libs: LibSeg,
     pub vars: Vec<Variable>,
-    pub entry_point: EntryPoint,
 }
 
-impl Display for Product {
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub struct DyLib {
+    pub(crate) inner: DyInner,
+    pub exports: BTreeMap<String, u16>,
+}
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub struct DyBin {
+    pub(crate) inner: DyInner,
+    pub entry_point: u16,
+}
+
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub enum Product {
+    Lib(DyLib),
+    Bin(DyBin),
+}
+
+impl Display for DyInner {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "NAME: {}@{}", self.name, self.org)?;
         f.write_str("ISAE: ")?;
@@ -70,14 +76,39 @@ impl Display for Product {
         f.write_str("\nDATA: \n")?;
         write!(f, "{:#}", self.data)?;
         f.write_str("\nLIBS: ")?;
-        Display::fmt(&self.libs, f)?;
+        Display::fmt(&self.libs, f)
         // TODO: Print vars information
-        f.write_str("\nENTRY: ")?;
-        Display::fmt(&self.entry_point, f)
     }
 }
 
-impl Encode for Product {
+impl Display for DyLib {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.inner, f)?;
+        f.write_str("\nEXPORTS: ")?;
+        for (routine, offset) in &self.exports {
+            writeln!(f, "\n{:04X} => {}", offset, routine)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for DyBin {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("\nENTRY: ")?;
+        writeln!(f, "0x{:04X}", self.entry_point)
+    }
+}
+
+impl Display for Product {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Product::Lib(lib) => Display::fmt(lib, f),
+            Product::Bin(bin) => Display::fmt(bin, f),
+        }
+    }
+}
+
+impl Encode for DyInner {
     type Error = EncodeError;
 
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
@@ -87,7 +118,33 @@ impl Encode for Product {
             + self.code.encode(&mut writer)?
             + self.data.encode(&mut writer)?
             + self.libs.encode(&mut writer)?
-            + MaxLenWord::new(&self.vars).encode(&mut writer)?
-            + self.entry_point.encode(&mut writer)?)
+            + MaxLenWord::new(&self.vars).encode(&mut writer)?)
+    }
+}
+
+impl Encode for DyLib {
+    type Error = EncodeError;
+
+    fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
+        Ok(self.inner.encode(&mut writer)? + MaxLenWord::new(&self.exports).encode(&mut writer)?)
+    }
+}
+
+impl Encode for DyBin {
+    type Error = EncodeError;
+
+    fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
+        Ok(self.inner.encode(&mut writer)? + self.entry_point.encode(&mut writer)?)
+    }
+}
+
+impl Encode for Product {
+    type Error = EncodeError;
+
+    fn encode(&self, writer: impl Write) -> Result<usize, Self::Error> {
+        match self {
+            Product::Lib(lib) => lib.encode(writer),
+            Product::Bin(bin) => bin.encode(writer),
+        }
     }
 }

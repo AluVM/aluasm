@@ -10,9 +10,9 @@ use std::io::{self, Read, Write};
 use std::string::FromUtf8Error;
 use std::vec::IntoIter;
 
-use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenByte, MaxLenWord};
-use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber, Number, NumberLayout};
-use aluvm::libs::constants::{ISAE_SEGMENT_MAX_LEN, LIBS_SEGMENT_MAX_COUNT};
+use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
+use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber};
+use aluvm::libs::constants::LIBS_SEGMENT_MAX_COUNT;
 use aluvm::libs::{LibId, LibSeg, LibSegOverflow, LibSite};
 use amplify::IoError;
 
@@ -70,11 +70,11 @@ impl CallTable {
         Ok(pos as u16)
     }
 
-    pub fn routines(&self) -> IntoIter<&str> {
+    pub fn routines(&self) -> IntoIter<(LibId, &str)> {
         self.0
             .iter()
             .flat_map(|(id, routines)| {
-                routines.into_iter().map(|call_ref| call_ref.routine.as_str())
+                routines.into_iter().map(move |call_ref| (*id, call_ref.routine.as_str()))
             })
             .collect::<Vec<_>>()
             .into_iter()
