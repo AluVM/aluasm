@@ -16,21 +16,22 @@
 ;;
 ;; # Uses
 ;; - a8[1]: temporary result code
+;; - a16[3]: zero
 .ROUTINE mine
                     put  0, a16[1]              ; putting a value into register
+                    put  0, a16[3]              ; we will use this later
 loop:                                           ; label for cycle
                     sha2 s16[1], r256[2]        ; taking hash of the data
-                    ; extr r256[2], s16[1]        ; saving hash result
+                    inj  s16[1], r256[2], a16[3] ; changing the string with the hash itself
                     inc  a16[1]                 ; counting steps
                     gt.u a16[1], a16[2]         ; making sure we do not exceed $cycle_limit
                     jif  exceeded
                     lt.u r256[2], r256[1]       ; checking against difficulty
                     jif  done                   ; target difficulty reached!
                     jmp  loop
-done:               put  1, a8[32]              ; failing since we exceeded $cycle_limit
-                    ifz  a8[32]
+done:               put  1, a8[1]               ; failing since we exceeded $cycle_limit
+                    ifz  a8[1]
                     ret
 exceeded:           put  0, a8[1]
                     st.s a8[1]
                     ret
-

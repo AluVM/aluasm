@@ -19,7 +19,9 @@ use aluvm::isa::{
     MoveOp, ParseFlagError, PutOp, Secp256k1Op,
 };
 use aluvm::libs::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
-use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
+use aluvm::reg::{
+    NumericRegister, Reg32, RegA, RegAF, RegAFR, RegAR, RegAll, RegR, RegS, Register,
+};
 use aluvm::Isa;
 use amplify::num::u1024;
 use pest::Span;
@@ -698,9 +700,13 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAFR::A(a) => Instr::Cmp(CmpOp::EqA(flags!(), a, idx! {0}, idx! {1})),
-                    RegAFR::F(f) => Instr::Cmp(CmpOp::EqF(flags!(), f, idx! {0}, idx! {1})),
-                    RegAFR::R(r) => Instr::Cmp(CmpOp::EqR(flags!(), r, idx! {0}, idx! {1})),
+                    RegAll::A(a) => Instr::Cmp(CmpOp::EqA(flags!(), a, idx! {0}, idx! {1})),
+                    RegAll::F(f) => Instr::Cmp(CmpOp::EqF(flags!(), f, idx! {0}, idx! {1})),
+                    RegAll::R(r) => Instr::Cmp(CmpOp::EqR(flags!(), r, idx! {0}, idx! {1})),
+                    RegAll::S => {
+                        let _: RegS = reg! {1};
+                        Instr::Bytes(BytesOp::Eq(idx! {0}, idx! {1}))
+                    }
                 }
             }
             Operator::gt => {
@@ -907,9 +913,196 @@ impl<'i> Statement<'i> {
             Operator::scl => Instr::Bitwise(BitwiseOp::Scl(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
             Operator::scr => Instr::Bitwise(BitwiseOp::Scr(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
             Operator::rev => match reg! {0} {
-                RegAR::A(a) => Instr::Bitwise(BitwiseOp::RevA(a, idx! {0})),
-                RegAR::R(r) => Instr::Bitwise(BitwiseOp::RevR(r, idx! {0})),
+                RegAll::A(a) => Instr::Bitwise(BitwiseOp::RevA(a, idx! {0})),
+                RegAll::R(r) => Instr::Bitwise(BitwiseOp::RevR(r, idx! {0})),
+                RegAll::S => {
+                    let _: RegS = reg! {1};
+                    Instr::Bytes(BytesOp::Rev(idx! {0}, idx! {1}))
+                }
+                _ => {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 0,
+                            expected: "register S",
+                        },
+                        self.operands[0].as_span(),
+                    );
+                    Instr::Nop
+                }
             },
+
+            // *** String operations
+            Operator::fill => {
+                let _: RegS = reg! {0};
+                let reg1: RegA = reg! {1};
+                let reg2: RegA = reg! {2};
+                let reg3: RegA = reg! {3};
+                if reg1 != RegA::A16 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 1,
+                            expected: "a16 register",
+                        },
+                        self.operands[1].as_span(),
+                    );
+                }
+                if reg2 != RegA::A16 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "a16 register",
+                        },
+                        self.operands[2].as_span(),
+                    );
+                }
+                if reg3 != RegA::A8 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 3,
+                            expected: "a8 register",
+                        },
+                        self.operands[3].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Fill(idx! {0}, idx! {1}, idx! {2}, idx! {3}, flags!()))
+            }
+            Operator::len => {
+                let _: RegS = reg! {0};
+                Instr::Bytes(BytesOp::Len(idx! {0}, reg! {1}, idx! {1}))
+            }
+            Operator::cnt => {
+                let _: RegS = reg! {0};
+                let reg1: RegA = reg! {1};
+                let reg2: RegA = reg! {2};
+                if reg1 != RegA::A8 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 1,
+                            expected: "a8 register",
+                        },
+                        self.operands[1].as_span(),
+                    );
+                }
+                if reg2 != RegA::A16 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "a16 register",
+                        },
+                        self.operands[2].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Cnt(idx! {0}, idx! {1}, idx! {2}))
+            }
+            Operator::con => {
+                let _: RegS = reg! {0};
+                let _: RegS = reg! {1};
+                for n in 1..4 {
+                    let reg: RegA = reg! {n+1};
+                    if reg != RegA::A16 {
+                        issues.push_error(
+                            CompileError::OperandWrongReg {
+                                operator: self.operator.0,
+                                pos: n,
+                                expected: "a16 register",
+                            },
+                            self.operands[n as usize].as_span(),
+                        );
+                    }
+                }
+                Instr::Bytes(BytesOp::Con(idx! {0}, idx! {1}, idx! {2}, idx! {3}, idx! {4}))
+            }
+            Operator::find => {
+                let _: RegS = reg! {0};
+                let _: RegS = reg! {1};
+                let reg: RegA = reg! {3};
+                let idx: Reg32 = idx! {3};
+                if reg != RegA::A16 || idx != Reg32::Reg1 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 3,
+                            expected: "a16[0] register",
+                        },
+                        self.operands[3].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Find(idx! {0}, idx! {1}))
+            }
+            Operator::extr => {
+                let _: RegS = reg! {0};
+                let reg = reg! {0};
+                if reg != reg! {1} {
+                    issues.push_error(
+                        CompileError::OperandRegMutBeEqual(self.operator.0),
+                        self.operands[1].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Extr(idx! {0}, reg, idx! {1}, idx! {2}))
+            }
+            Operator::inj => {
+                let _: RegS = reg! {0};
+                let reg: RegA = reg! {2};
+                if reg != RegA::A16 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "a16 register",
+                        },
+                        self.operands[2].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Inj(idx! {0}, reg! {1}, idx! {1}, idx! {2}))
+            }
+            Operator::join => {
+                let _: RegS = reg! {0};
+                let _: RegS = reg! {1};
+                let _: RegS = reg! {2};
+                Instr::Bytes(BytesOp::Join(idx! {0}, idx! {1}, idx! {2}))
+            }
+            Operator::splt => {
+                let _: RegS = reg! {0};
+                let _: RegS = reg! {2};
+                let _: RegS = reg! {3};
+                let reg: RegA = reg! {1};
+                if reg != RegA::A16 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 1,
+                            expected: "a16[0] register",
+                        },
+                        self.operands[1].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Splt(flags!(), idx! {1}, idx! {0}, idx! {2}, idx! {3}))
+            }
+            Operator::ins => {
+                let _: RegS = reg! {0};
+                let _: RegS = reg! {1};
+                let reg: RegA = reg! {2};
+                if reg != RegA::A16 {
+                    issues.push_error(
+                        CompileError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "a16[0] register",
+                        },
+                        self.operands[2].as_span(),
+                    );
+                }
+                Instr::Bytes(BytesOp::Ins(flags!(), idx! {2}, idx! {0}, idx! {1}))
+            }
+            Operator::del => {
+                todo!("Unimplemented operation `del`")
+            }
 
             // *** Digest operations
             Operator::ripemd => {

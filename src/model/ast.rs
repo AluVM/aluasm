@@ -156,21 +156,30 @@ pub enum Operator {
     and,
     call,
     clr,
+    cnt,
     cnv,
+    con,
     cpy,
     dec,
+    del,
     div,
     dup,
     eq,
     exec,
+    extr,
     fail,
+    fill,
+    find,
     gt,
     ifn,
     ifz,
     inc,
-    stinv,
+    inj,
+    ins,
     jif,
     jmp,
+    join,
+    len,
     lt,
     mov,
     mul,
@@ -194,8 +203,10 @@ pub enum Operator {
     sha2,
     shl,
     shr,
+    splt,
     spy,
     st,
+    stinv,
     sub,
     succ,
     swp,
@@ -204,13 +215,13 @@ pub enum Operator {
 }
 
 impl Operator {
-    pub const fn all() -> [Operator; 50] {
+    pub const fn all() -> [Operator; 61] {
         use Operator::*;
         [
-            abs, add, and, call, clr, cnv, cpy, dec, div, dup, eq, exec, fail, gt, ifn, ifz, inc,
-            stinv, jif, jmp, lt, mov, mul, neg, not, or, put, putif, read, rem, ret, rev, ripemd,
-            routine, scl, scr, secpadd, secpgen, secpmul, secpneg, sha2, shl, shr, spy, st, sub,
-            succ, swp, xor, nop,
+            abs, add, and, call, clr, cnt, cnv, con, cpy, dec, del, div, dup, eq, exec, extr, fail,
+            fill, find, gt, ifn, ifz, inc, inj, ins, jif, jmp, join, len, lt, mov, mul, neg, not,
+            or, put, putif, read, rem, ret, rev, ripemd, routine, scl, scr, secpadd, secpgen,
+            secpmul, secpneg, sha2, shl, shr, splt, spy, st, stinv, sub, succ, swp, xor, nop,
         ]
     }
 }
