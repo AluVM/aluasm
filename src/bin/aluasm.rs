@@ -16,7 +16,7 @@ use aluasm::ast::Program;
 use aluasm::parser::{Parser, Rule};
 use aluasm::{BuildError, LexerError, MainError};
 use aluvm::data::encoding::Encode;
-use aluvm::isa::ReservedOp;
+use aluvm::isa::Instr;
 use aluvm::libs::Lib;
 use clap::{AppSettings, Clap};
 use pest::Parser as ParserTrait;
@@ -163,7 +163,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     }
 
     if args.test_lib || args.test_disassemble {
-        let lib: Lib<ReservedOp> =
+        let lib: Lib =
             Lib::with(&module.isae, module.code, module.data, module.libs).map_err(|err| {
                 BuildError::LibraryAssembling { file: dest_name.clone(), details: err }
             })?;
@@ -174,8 +174,9 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
         }
 
         if args.test_disassemble {
-            let code =
-                lib.disassemble().map_err(|_| BuildError::Disassembling { file: dest_name })?;
+            let code = lib
+                .disassemble::<Instr>()
+                .map_err(|_| BuildError::Disassembling { file: dest_name })?;
 
             if args.verbose >= 2 {
                 eprintln!("\x1B[0;35m Printing\x1B[0m module disassemply:");
