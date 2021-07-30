@@ -308,7 +308,7 @@ pub enum CompilerError {
     CallTable(CallTableError),
 
     /// unable to construct float representation of literal `{0}.{1}e{2}`
-    /// \n
+    ///
     /// details: {3:?}
     FloatConstruction(u128, u128, u16, ParseError),
 }
@@ -372,7 +372,7 @@ impl From<LinkerError> for MainError {
 #[display(doc_comments)]
 pub enum BuildError {
     /// unable to create output directory `{dir}`
-    /// \n
+    ///
     /// details: {details}
     OutputDir { dir: String, details: Box<dyn Error> },
 
@@ -380,42 +380,42 @@ pub enum BuildError {
     NotFile(String),
 
     /// no file named `{file}`
-    /// \n
+    ///
     /// details: {details}
     FileNotFound { file: String, details: Box<dyn Error> },
 
     /// file `{file}` exists, but can't be opened; please check file attributes
-    /// \n
+    ///
     /// details: {details}
     FileNoAccess { file: String, details: Box<dyn Error> },
 
     /// unable to create dump file `{file}`
-    /// \n
+    ///
     /// details: {details}
     DumpFileCreation { file: String, details: Box<dyn Error> },
 
     /// unable to create object file `{file}`
-    /// \n
+    ///
     /// details: {details}
     ObjFileCreation { file: String, details: Box<dyn Error> },
 
     /// unable to write into object file `{file}`
-    /// \n
+    ///
     /// details: {details}
     ObjFileWrite { file: String, details: Box<dyn Error> },
 
     /// unable to create product file `{file}`
-    /// \n
+    ///
     /// details: {details}
     ProductFileCreation { file: String, details: Box<dyn Error> },
 
     /// unable to write into product file `{file}`
-    /// \n
+    ///
     /// details: {details}
     ProductFileWrite { file: String, details: Box<dyn Error> },
 
-    /// unable to create library out of object data for `{file}`
-    /// \n
+    /// unable to test AluVM static library assembly for `{file}`
+    ///
     /// details: {details}
     LibraryCreation { file: String, details: SegmentError },
 
@@ -427,7 +427,7 @@ pub enum BuildError {
     ObjDirIsFile(String),
 
     /// can't access objects directory `{0}`
-    /// \n
+    ///
     /// details: {1}
     ObjDirFail(String, IoError),
 }

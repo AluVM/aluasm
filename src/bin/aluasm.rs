@@ -60,10 +60,10 @@ pub struct Args {
 fn main() {
     let args = Args::parse();
     compile(&args).unwrap_or_else(|err| {
-        eprintln!("{}", err);
+        eprintln!("{}\n", err);
         exit(1)
     });
-    eprintln!("\x1B[1;32m Finished\x1B[0m successfully");
+    eprintln!("\x1B[1;32m Finished\x1B[0m successfully\n");
 }
 
 fn compile(args: &Args) -> Result<(), MainError> {
@@ -131,7 +131,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
             issues.to_string(),
         ));
     }
-    eprintln!("{}", issues);
+    eprint!("{}", issues);
 
     let (module, issues) = program.compile(&mut dump)?;
     if issues.has_errors() {
@@ -142,7 +142,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
             issues.to_string(),
         ));
     }
-    eprintln!("{}", issues);
+    eprint!("{}", issues);
 
     let mut dest = args.output.clone();
     dest.push(file.file_name().unwrap_or_default());
@@ -158,8 +158,8 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     })?;
 
     if args.verbose >= 2 {
-        eprintln!("\x1B[1;33m Printing\x1B[0m module dump:");
-        println!("{:?}", module);
+        eprintln!("\n\x1B[1;33m Printing\x1B[0m module dump:");
+        println!("{:?}\n", module);
     }
 
     if args.test_lib || args.test_disassemble {

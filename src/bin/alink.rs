@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Components, PathBuf};
 use std::process::exit;
 
 use aluasm::module::Module;
@@ -66,32 +66,51 @@ pub struct Args {
     #[clap(short, long = "org")]
     pub org_name: String,
 
-    /// Object file to link
+    /// Object file name to link. The object file is looked up at --obj-dir path and extension is
+    /// automatically added if necessary.
     #[clap(required = true)]
-    pub file: PathBuf,
+    pub file: String,
+}
+
+impl Args {
+    pub fn processed(mut self) -> Self {
+        let build_dir = self.build_dir.clone();
+        Args::processed_path(&mut self.obj_dir, &build_dir);
+        Args::processed_path(&mut self.lib_dir, &build_dir);
+        self
+    }
+
+    fn processed_path(path: &mut PathBuf, build_dir: &PathBuf) {
+        *path = path.iter().fold(PathBuf::new(), |mut path, comp| {
+            if comp == "${ALU_BUILD_DIR}" {
+                path.push(build_dir);
+            } else {
+                path.push(comp);
+            }
+            path
+        });
+    }
 }
 
 fn main() {
-    let args = Args::parse();
+    let mut args: Args = Args::parse().processed();
+
     link(&args).unwrap_or_else(|err| {
-        eprintln!("{}", err);
+        eprintln!("{}\n", err);
         exit(1)
     });
     eprintln!("\x1B[1;32m Finished\x1B[0m successfully");
 }
 
 fn link(args: &Args) -> Result<(), MainError> {
-    let product_name = args.product_name.as_ref().cloned().unwrap_or(
-        args.file
-            .file_stem()
-            .ok_or(BuildError::NotFile(args.file.to_string_lossy().to_string()))?
-            .to_string_lossy()
-            .to_string(),
-    );
+    let product_name = args.product_name.as_ref().cloned().unwrap_or(args.file.to_owned());
     let org_name = args.org_name.clone();
     eprintln!("\x1B[1;32m  Linking\x1B[0m {}\x1B[5;34m@{}\x1B[0m", product_name, org_name);
 
-    let (module, module_name) = read_object(&args.file, &args)?;
+    let mut path = args.obj_dir.clone();
+    path.push(&args.file);
+    path.set_extension("ao");
+    let (module, module_name) = read_object(&path, &args)?;
 
     let (product, issues) = if args.bin {
         module.link_bin(product_name.clone(), org_name.clone())?
@@ -107,7 +126,7 @@ fn link(args: &Args) -> Result<(), MainError> {
             issues.to_string(),
         ));
     }
-    eprintln!("{}", issues);
+    eprint!("{}", issues);
 
     if args.verbose > 1 {
         eprintln!("{}", product);

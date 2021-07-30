@@ -123,7 +123,7 @@ pub struct Module {
 #[display(doc_comments)]
 pub enum ModuleError {
     /// end of data is reached before the complete module read
-    /// \n
+    ///
     /// details: {0}
     #[from]
     #[from(io::Error)]
@@ -137,17 +137,17 @@ pub enum ModuleError {
     LibCountLimExceeded,
 
     /// input variable description has a non-UTF8 encoding
-    /// \n
+    ///
     /// details: {0}
     VarNonUtf8(FromUtf8Error),
 
     /// routine symbol name has a non-UTF8 encoding
-    /// \n
+    ///
     /// details: {0}
     RoutineNonUtf8(FromUtf8Error),
 
     /// external call symbol has a non-UTF8 encoding
-    /// \n
+    ///
     /// details: {0}
     ExternalNonUtf8(FromUtf8Error),
 

@@ -4,6 +4,7 @@
                     BPDIGEST
 
 .LIBS ; Library reference segment
+                    ; This library reference is not existing and never used in code
                     somelib alu1wnhusevxmdphv3dh8ada44k0xw66ahq9nzhkv39z07hmudhp380sq0dtml
 
 .MAIN ; Code segment
@@ -75,7 +76,6 @@ loop:               swp     a8[1],a8[2]
                     ifz     a16[8]
                     jif     done
                     jmp     loop
-                    call    somelib->method
 done:               ret
 
 .CONST ; Constant data segment
