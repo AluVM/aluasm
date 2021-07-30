@@ -17,7 +17,6 @@ use aluasm::parser::{Parser, Rule};
 use aluasm::{BuildError, LexerError, MainError};
 use aluvm::data::encoding::Encode;
 use aluvm::isa::Instr;
-use aluvm::libs::Lib;
 use clap::{AppSettings, Clap};
 use pest::Parser as ParserTrait;
 
@@ -40,10 +39,6 @@ pub struct Args {
     /// Dumps debug raw compilation log to the destination location
     #[clap(long, global = true)]
     pub dump: Option<PathBuf>,
-
-    /// Tests creation of library from the generated object module
-    #[clap(long, global = true)]
-    pub test_lib: bool,
 
     /// Tests disassembly of the generated library
     #[clap(long, global = true)]
@@ -162,19 +157,10 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
         println!("{}\n", module);
     }
 
-    if args.test_lib || args.test_disassemble {
-        let lib: Lib =
-            Lib::with(&module.isae, module.code, module.data, module.libs).map_err(|err| {
-                BuildError::LibraryAssembling { file: dest_name.clone(), details: err }
-            })?;
-
-        if args.verbose >= 2 {
-            eprintln!("\x1B[0;35m Printing\x1B[0m library dump:");
-            println!("{}", lib);
-        }
-
+    if args.test_disassemble {
         if args.test_disassemble {
-            let code = lib
+            let code = module
+                .as_static_lib()
                 .disassemble::<Instr>()
                 .map_err(|_| BuildError::Disassembling { file: dest_name })?;
 

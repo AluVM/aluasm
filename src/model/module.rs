@@ -14,7 +14,7 @@ use std::vec::IntoIter;
 use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
 use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber};
 use aluvm::libs::constants::LIBS_SEGMENT_MAX_COUNT;
-use aluvm::libs::{LibId, LibSeg, LibSegOverflow, LibSite};
+use aluvm::libs::{Lib, LibId, LibSegOverflow, LibSite};
 use amplify::hex::format_hex;
 use amplify::IoError;
 
@@ -113,14 +113,16 @@ pub struct Variable {
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Default)]
 pub struct Module {
-    pub isae: String,
-    pub code: Vec<u8>,
-    pub data: Vec<u8>,
-    pub libs: LibSeg,
+    pub(crate) inner: Lib,
     pub vars: Vec<Variable>,
     pub imports: CallTable,
     /// Map of local routine names to code offsets
     pub exports: BTreeMap<String, u16>,
+}
+
+impl Module {
+    #[inline]
+    pub fn as_static_lib(&self) -> &Lib { &self.inner }
 }
 
 impl Display for CallRef {
@@ -179,10 +181,7 @@ impl Display for Variable {
 
 impl Display for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "ISAE:   {}", self.isae)?;
-        write!(f, "CODE:\n{:#10}", ByteStr::with(&self.code))?;
-        write!(f, "DATA:\n{:#10}", ByteStr::with(&self.data))?;
-        write!(f, "LIBS:   {:8}", self.libs)?;
+        Display::fmt(&self.inner, f)?;
 
         f.write_str("VARS:   ")?;
         for (line, v) in self.vars.iter().enumerate() {
@@ -377,10 +376,7 @@ impl Encode for Module {
     type Error = EncodeError;
 
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
-        Ok(self.isae.encode(&mut writer)?
-            + ByteStr::with(&self.code).encode(&mut writer)?
-            + ByteStr::with(&self.data).encode(&mut writer)?
-            + self.libs.encode(&mut writer)?
+        Ok(self.inner.encode(&mut writer)?
             + self.imports.encode(&mut writer)?
             + MaxLenWord::new(&self.exports).encode(&mut writer)?
             + MaxLenWord::new(&self.vars).encode(&mut writer)?)
@@ -395,10 +391,7 @@ impl Decode for Module {
         Self: Sized,
     {
         Ok(Module {
-            isae: Decode::decode(&mut reader)?,
-            code: ByteStr::decode(&mut reader)?.to_vec(),
-            data: ByteStr::decode(&mut reader)?.to_vec(),
-            libs: Decode::decode(&mut reader)?,
+            inner: Decode::decode(&mut reader)?,
             imports: Decode::decode(&mut reader)?,
             exports: MaxLenWord::decode(&mut reader)?.release(),
             vars: MaxLenWord::decode(&mut reader)?.release(),

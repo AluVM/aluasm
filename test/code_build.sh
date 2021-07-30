@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 cargo build --all-targets || exit 1
-ASM_FLAGS="-vv --test-lib"
+ASM_FLAGS="-vv"
 LINK_FLAGS="-vv"
 ASM=./target/debug/aluasm
 LINK=./target/debug/alink

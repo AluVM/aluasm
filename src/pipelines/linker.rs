@@ -5,14 +5,11 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
-use std::borrow::Borrow;
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::path::PathBuf;
 
 use aluvm::data::encoding::Decode;
-use aluvm::data::ByteStr;
 use aluvm::isa::{ControlFlowOp, Instr};
 use aluvm::libs::{Cursor, LibId, Write};
 
@@ -65,12 +62,10 @@ impl Module {
         lib_man: &mut LibManager,
         issues: &mut Issues<issues::Linking>,
     ) -> Result<Product, LinkerError> {
-        let isae = self.isae.clone();
-        let code = ByteStr::try_from(self.code.borrow())
-            .map_err(|err| LinkerError::CodeSegmentOversized(err.value))?;
-        let data = ByteStr::try_from(self.data.borrow())
-            .map_err(|err| LinkerError::DataSegmentOversized(err.value))?;
-        let libs = self.libs.clone();
+        let isae = self.inner.isae.join(" ");
+        let code = self.inner.code.clone();
+        let data = self.inner.data.clone();
+        let libs = self.inner.libs.clone();
         let vars = self.vars.clone();
 
         for (libid, routine, map) in self.imports.call_refs() {
@@ -94,8 +89,8 @@ impl Module {
                 }
             };
 
-            let mut code = self.code.clone();
-            let mut cursor = Cursor::with(&mut code, self.data.clone(), &self.libs);
+            let mut code = self.inner.code.clone();
+            let mut cursor = Cursor::with(&mut code, self.inner.data.clone(), &self.inner.libs);
             for p in map {
                 cursor
                     .edit(*p, |instr| match instr {

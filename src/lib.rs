@@ -18,7 +18,7 @@ use std::num::ParseIntError;
 
 use aluvm::data::encoding::DecodeError;
 use aluvm::isa::Instr;
-use aluvm::libs::{CodeEofError, SegmentError};
+use aluvm::libs::CodeEofError;
 use amplify::{hex, IoError};
 pub use model::{ast, issues, module, product};
 pub use pipelines::{analyzer, compiler, linker, parser};
@@ -345,12 +345,6 @@ impl From<CompilerError> for MainError {
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Display, Error)]
 #[display(doc_comments)]
 pub enum LinkerError {
-    /// code segment size {0} exceeds maximal limit of 2^16 bytes
-    CodeSegmentOversized(usize),
-
-    /// data segment size {0} exceeds maximal limit of 2^16 bytes
-    DataSegmentOversized(usize),
-
     /// unable to read instruction at position {0}
     InstrRead(u16),
 
@@ -361,8 +355,6 @@ pub enum LinkerError {
 impl LinkerError {
     pub fn errno(&self) -> u16 {
         match self {
-            LinkerError::CodeSegmentOversized(_) => 1,
-            LinkerError::DataSegmentOversized(_) => 2,
             LinkerError::InstrRead(_) => 3,
             LinkerError::InstrChanged(_, _, _) => 4,
         }
@@ -429,11 +421,6 @@ pub enum BuildError {
     ///
     /// details: {details}
     ProductFileWrite { file: String, details: Box<dyn Error> },
-
-    /// unable to test AluVM static library assembly for `{file}`
-    ///
-    /// details: {details}
-    LibraryAssembling { file: String, details: SegmentError },
 
     /// error disassembling file `{file}` since last instruction is incomplete
     Disassembling { file: String },
