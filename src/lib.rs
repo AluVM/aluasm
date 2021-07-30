@@ -18,7 +18,7 @@ use std::num::ParseIntError;
 
 use aluvm::data::encoding::DecodeError;
 use aluvm::isa::Instr;
-use aluvm::libs::CodeEofError;
+use aluvm::libs::{CodeEofError, IsaSegError};
 use amplify::{hex, IoError};
 pub use model::{ast, issues, module, product};
 pub use pipelines::{analyzer, compiler, linker, parser};
@@ -291,6 +291,11 @@ pub enum InstrError {
 #[derive(Clone, Eq, PartialEq, Debug, Display, Error, From)]
 #[display(doc_comments)]
 pub enum CompilerError {
+    /// Errors related to ISA segment
+    #[from]
+    #[display(inner)]
+    Isa(IsaSegError),
+
     /// routine `{0}` is absent in the list of routines
     RoutineMissed(String),
 
@@ -317,12 +322,18 @@ pub enum CompilerError {
 impl CompilerError {
     pub fn errno(&self) -> u16 {
         match self {
-            CompilerError::RoutineMissed(_) => 1,
-            CompilerError::RoutineEmpty(_) => 2,
-            CompilerError::InstrRead(_) => 3,
-            CompilerError::InstrChanged(_, _, _) => 4,
-            CompilerError::FloatConstruction(_, _, _, _) => 5,
-            CompilerError::CallTable(_) => 6,
+            CompilerError::Isa(err) => match err {
+                IsaSegError::SegmentTooLarge(_) => 1,
+                IsaSegError::SegmentTooManyExt(_) => 2,
+                IsaSegError::IsaIdWrongLength(_) => 3,
+                IsaSegError::IsaIdWrongSymbols(_) => 4,
+            },
+            CompilerError::RoutineMissed(_) => 5,
+            CompilerError::RoutineEmpty(_) => 6,
+            CompilerError::InstrRead(_) => 7,
+            CompilerError::InstrChanged(_, _, _) => 8,
+            CompilerError::FloatConstruction(_, _, _, _) => 9,
+            CompilerError::CallTable(_) => 10,
         }
     }
 

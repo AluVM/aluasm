@@ -18,7 +18,7 @@ use aluvm::isa::{
     ArithmeticOp, BitwiseOp, Bytecode, CmpOp, ControlFlowOp, DigestOp, Flag, Instr, MoveOp,
     ParseFlagError, PutOp, Secp256k1Op,
 };
-use aluvm::libs::{Cursor, Lib, LibId, LibSeg, LibSite, Read, Write};
+use aluvm::libs::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{NumericRegister, Reg32, RegAF, RegAFR, RegAR, RegAll, RegR, Register};
 use aluvm::Isa;
 use amplify::num::u1024;
@@ -37,8 +37,8 @@ impl<'i> Program<'i> {
     ) -> Result<(Module, Issues<'i, issues::Compile>), CompilerError> {
         let mut issues = Issues::default();
 
-        let isae = self.isae.iter().map(Isa::to_string).collect();
-        let libs_segment = LibSeg::with(self.libs.map.values().copied())
+        let isae = IsaSeg::from_iter(self.isae.iter().map(Isa::to_string))?;
+        let libs_segment = LibSeg::from_iter(self.libs.map.values().copied())
             .map_err(|err| issues.push_error(err.into(), &self.libs.span))
             .unwrap_or_default();
         let mut code_segment = ByteStr::default();
