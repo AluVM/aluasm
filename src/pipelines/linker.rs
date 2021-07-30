@@ -8,8 +8,10 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::path::PathBuf;
 
+use aluvm::data::encoding::Decode;
 use aluvm::data::ByteStr;
 use aluvm::isa::{ControlFlowOp, Instr};
 use aluvm::libs::{Cursor, LibId, Write};
@@ -17,7 +19,7 @@ use aluvm::libs::{Cursor, LibId, Write};
 use crate::issues::{self, Issues, LinkingError, LinkingWarning};
 use crate::module::Module;
 use crate::product::{DyBin, DyInner, DyLib, EntryPoint, Product};
-use crate::{InstrError, LinkerError};
+use crate::{BuildError, InstrError, LinkerError};
 
 impl Module {
     pub fn link_bin(
@@ -119,21 +121,47 @@ impl Module {
 
 #[derive(Debug)]
 pub struct LibManager {
-    map: BTreeMap<LibId, PathBuf>,
+    paths: BTreeMap<LibId, PathBuf>,
     cache: BTreeMap<LibId, DyLib>,
 }
 
 impl LibManager {
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        // TODO:
-        LibManager { map: bmap! {}, cache: bmap! {} }
+    pub fn with(paths: Vec<PathBuf>) -> Result<Self, BuildError> {
+        let mut map = bmap! {};
+        for path in paths {
+            let lib_name = path.to_string_lossy().to_string();
+            eprint!(
+                "\x1B[1;32m Checking\x1B[0m {} ... ",
+                path.canonicalize().unwrap_or_default().display()
+            );
+            if !path.is_file() {
+                return Err(BuildError::LibIsDir(lib_name));
+            }
+            let fd = File::open(&path)
+                .map_err(|err| BuildError::LibNotAccessible(lib_name.clone(), Box::new(err)))?;
+            let id =
+                DyLib::decode_id(fd).map_err(|err| BuildError::LibIncorrectData(lib_name, err))?;
+            map.insert(id, path);
+            eprintln!("{}", id);
+        }
+        Ok(LibManager { paths: map, cache: bmap! {} })
     }
 
     pub fn get(&mut self, id: LibId) -> Option<&DyLib> {
+        if let Some(path) = self.paths.get(&id) {
+            eprintln!(
+                "\x1B[1;32m  Loading\x1B[0m {} ({})",
+                id,
+                path.canonicalize().unwrap_or_default().display()
+            );
+
+            let fd = File::open(path).ok()?;
+            let lib = DyLib::decode(fd).ok()?;
+            self.cache.insert(id, lib);
+        }
         if let Some(lib) = self.cache.get(&id) {
             return Some(lib);
         }
-        // TODO:
         None
     }
 }

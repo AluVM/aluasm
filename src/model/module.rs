@@ -6,6 +6,7 @@
 // for Pandora Core AG
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Display, Formatter, Write as WriteTrait};
 use std::io::{self, Read, Write};
 use std::string::FromUtf8Error;
 use std::vec::IntoIter;
@@ -14,6 +15,7 @@ use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord
 use aluvm::data::{ByteStr, FloatLayout, IntLayout, Layout, MaybeNumber};
 use aluvm::libs::constants::LIBS_SEGMENT_MAX_COUNT;
 use aluvm::libs::{LibId, LibSeg, LibSegOverflow, LibSite};
+use amplify::hex::format_hex;
 use amplify::IoError;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Display, Error, From)]
@@ -45,6 +47,9 @@ pub struct CallRef {
 pub struct CallTable(BTreeMap<LibId, Vec<CallRef>>);
 
 impl CallTable {
+    #[inline]
+    pub fn count(&self) -> u16 { self.0.len() as u16 }
+
     pub fn get_mut(&mut self, site: LibSite) -> Result<&mut CallRef, CallTableError> {
         self.0
             .get_mut(&site.lib)
@@ -116,6 +121,95 @@ pub struct Module {
     pub imports: CallTable,
     /// Map of local routine names to code offsets
     pub exports: BTreeMap<String, u16>,
+}
+
+impl Display for CallRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "`{}` called from", self.routine)?;
+        for offset in &self.sites {
+            write!(f, " 0x{:04X}", offset)?;
+        }
+        f.write_char('\n')
+    }
+}
+
+impl Display for CallTable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (line, (lib, map)) in self.0.iter().enumerate() {
+            if line > 0 {
+                write!(f, "{:1$}", "", f.width().unwrap_or_default())?;
+            }
+            writeln!(f, "{}:", lib)?;
+            for call_ref in map {
+                write!(f, "\t\t{}", call_ref)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            DataType::ByteStr(Some(default)) => {
+                f.write_str("bytes\tdefault(0x")?;
+                format_hex(default, f)?;
+                f.write_char(')')
+            }
+            DataType::ByteStr(None) => f.write_str("bytes\tdefault(none)"),
+            DataType::Int(layout, default) => {
+                write!(f, "int({})\tdefault({})", layout, default)
+            }
+            DataType::Float(layout, default) => {
+                write!(f, "float({})\tdefault({})", layout, default)
+            }
+        }
+    }
+}
+
+impl Display for Variable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_char('\t')?;
+        Display::fmt(&self.data, f)?;
+        f.write_char('\t')?;
+        f.write_str(&self.info)?;
+        f.write_char('\n')
+    }
+}
+
+impl Display for Module {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(f, "ISAE:   {}", self.isae)?;
+        write!(f, "CODE:\n{:#10}", ByteStr::with(&self.code))?;
+        write!(f, "DATA:\n{:#10}", ByteStr::with(&self.data))?;
+        write!(f, "LIBS:   {:8}", self.libs)?;
+
+        f.write_str("VARS:   ")?;
+        for (line, v) in self.vars.iter().enumerate() {
+            if line > 0 {
+                write!(f, "{:8}", "")?;
+            }
+            writeln!(f, "{}", v)?;
+        }
+        if self.vars.is_empty() {
+            f.write_char('\n')?;
+        }
+
+        write!(f, "IMPORT: {:8}", self.imports)?;
+
+        f.write_str("EXPORT: ")?;
+        for (line, (routine, offset)) in self.exports.iter().enumerate() {
+            if line > 0 {
+                write!(f, "{:8}", "")?;
+            }
+            writeln!(f, "0x{:04X}\t{}", offset, routine)?;
+        }
+        if self.exports.is_empty() {
+            f.write_char('\n')?;
+        }
+
+        Ok(())
+    }
 }
 
 /// TODO: use in decoding (currently unused, had left after refactoring)

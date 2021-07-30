@@ -4,7 +4,7 @@
                     BPDIGEST
 
 .LIBS ; Library reference segment
-                    miner alu1wnhusevxmdphv3dh8ada44k0xw66ahq9nzhkv39z07hmudhp380sq0dtml
+                    miner alu16gnmgjl7vjzgycnf2l2np66fhmf87zzr9pnvj50vg4en4fnvmggq2c3sgn
 
 .MAIN ; Code segment
                     read s16[1], $input         ; AluRE ISA extension opcode to read

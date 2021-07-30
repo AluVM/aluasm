@@ -27,6 +27,7 @@ use rustc_apfloat::ParseError;
 use crate::issues::Src;
 use crate::module::CallTableError;
 use crate::parser::Rule;
+use crate::product::DyError;
 
 #[derive(Debug, Display, Error, From)]
 pub enum MainError {
@@ -432,7 +433,7 @@ pub enum BuildError {
     /// unable to test AluVM static library assembly for `{file}`
     ///
     /// details: {details}
-    LibraryCreation { file: String, details: SegmentError },
+    LibraryAssembling { file: String, details: SegmentError },
 
     /// error disassembling file `{file}` since last instruction is incomplete
     Disassembling { file: String },
@@ -445,4 +446,27 @@ pub enum BuildError {
     ///
     /// details: {1}
     ObjDirFail(String, IoError),
+
+    /// path `{0}` specified for library directory (-L | --lib-dir) is not a directory. Try use
+    /// lowercase -l argument if you'd like to specify a single library file
+    LibDirIsFile(String),
+
+    /// library `{0}` is a directory, not a file. Try use uppercase -L argument if you'd like to
+    /// specify a library directory and not a single file
+    LibIsDir(String),
+
+    /// can't access library directory `{0}`
+    ///
+    /// details: {1}
+    LibDirFail(String, IoError),
+
+    /// library at `{0}` has incorrect binary data
+    ///
+    /// details: {1}
+    LibIncorrectData(String, DyError),
+
+    /// library file at `{0}` is not accessible
+    ///
+    /// details: {1}
+    LibNotAccessible(String, Box<dyn Error>),
 }

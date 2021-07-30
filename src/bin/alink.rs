@@ -7,11 +7,12 @@
 
 use std::fs;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use aluasm::linker::LibManager;
 use aluasm::module::Module;
+use aluasm::product::Product;
 use aluasm::{BuildError, MainError};
 use aluvm::data::encoding::{Decode, Encode};
 use clap::{AppSettings, Clap};
@@ -40,19 +41,22 @@ pub struct Args {
     #[clap(long, global = true)]
     pub lib: bool,
 
-    /// Build directory with object files. Defaults to `{build-dir}/objects}` (see --build-dir
+    /// Build directory with object files. Defaults to `{build-dir}/objects` (see --build-dir
     /// argument)
     #[clap(short = 'O', long, global = true, default_value = "${ALU_BUILD_DIR}/objects")]
     pub obj_dir: PathBuf,
 
-    /// Directory containing library files. Defaults to `{build-dir}/libs}` (see --build-dir
-    /// argument)
-    #[clap(short = 'L', long, global = true, default_value = "${ALU_BUILD_DIR}/libs")]
-    pub lib_dir: PathBuf,
+    /// Directories containing library files (--build-dir included in the list automatically)
+    #[clap(short = 'L', long = "lib-dir", global = true)]
+    pub lib_dirs: Vec<PathBuf>,
 
     /// Adds specific library
     #[clap(short = 'l', global = true)]
     pub libs: Vec<PathBuf>,
+
+    /// Directory to put linked binary files (products). Defaults to --build-dir
+    #[clap(short = 'T', long, global = true, default_value = "${ALU_BUILD_DIR}")]
+    pub target_dir: PathBuf,
 
     /// Path to a directory used for building process
     #[clap(short = 'B', long, global = true, default_value = "./build/")]
@@ -77,7 +81,7 @@ impl Args {
     pub fn processed(mut self) -> Self {
         let build_dir = self.build_dir.clone();
         Args::processed_path(&mut self.obj_dir, &build_dir);
-        Args::processed_path(&mut self.lib_dir, &build_dir);
+        Args::processed_path(&mut self.target_dir, &build_dir);
         self
     }
 
@@ -100,20 +104,30 @@ fn main() {
         eprintln!("{}\n", err);
         exit(1)
     });
-    eprintln!("\x1B[1;32m Finished\x1B[0m successfully");
+    eprintln!("\x1B[1;32m Finished\x1B[0m successfully\n");
 }
 
 fn link(args: &Args) -> Result<(), MainError> {
+    fs::create_dir_all(&args.target_dir).map_err(|err| BuildError::OutputDir {
+        dir: args.target_dir.to_string_lossy().to_string(),
+        details: Box::new(err),
+    })?;
+
     let product_name = args.product_name.as_ref().cloned().unwrap_or(args.file.to_owned());
     let org_name = args.org_name.clone();
-    eprintln!("\x1B[1;32m  Linking\x1B[0m {}\x1B[5;34m@{}\x1B[0m", product_name, org_name);
+    eprintln!("\x1B[1;32m  Linking\x1B[0m {}\x1B[1;34m@{}\x1B[0m", product_name, org_name);
 
     let mut path = args.obj_dir.clone();
     path.push(&args.file);
     path.set_extension("ao");
     let (module, module_name) = read_object(&path, &args)?;
 
-    let mut manager = LibManager::new(&args.lib_dir);
+    let mut libs = enumerate_libs(&args.target_dir)?;
+    for path in &args.lib_dirs {
+        libs.extend(enumerate_libs(path)?);
+    }
+    libs.extend(args.libs.iter().cloned());
+    let mut manager = LibManager::with(libs)?;
 
     let (product, issues) = if args.bin {
         module.link_bin(product_name.clone(), org_name.clone(), &mut manager)?
@@ -131,24 +145,54 @@ fn link(args: &Args) -> Result<(), MainError> {
     }
     eprint!("{}", issues);
 
-    if args.verbose > 1 {
-        eprintln!("{}", product);
+    if args.verbose >= 2 {
+        eprintln!("\x1B[0;35m Printing\x1B[0m product dump:");
+        println!("{}", product);
     }
 
-    let mut target_path = args.build_dir.clone();
+    if let Product::Lib(ref lib) = product {
+        eprintln!("\x1B[1;32m   Lib ID\x1B[0m: \x1B[1;34m{}\x1B[0m", lib.lib_id());
+    }
+
+    let mut target_path = args.target_dir.clone();
     target_path.push(format!("{}@{}", product_name, org_name));
-    target_path.set_extension("rex");
+    target_path.set_extension(product.file_extension());
     let target_name = target_path.to_string_lossy().to_string();
     let file = File::create(&target_path).map_err(|err| BuildError::ProductFileCreation {
         file: target_name.clone(),
         details: Box::new(err),
     })?;
+    eprintln!("\x1B[1;32m   Saving\x1B[0m {} to `{}`", module_name, target_path.display());
     product.encode(file).map_err(|err| BuildError::ProductFileWrite {
         file: target_name,
         details: Box::new(err),
     })?;
 
     Ok(())
+}
+
+fn enumerate_libs(lib_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, BuildError> {
+    let lib_dir = lib_dir.as_ref();
+    let lib_dir_name = lib_dir.to_string_lossy().to_string();
+    if lib_dir.is_file() {
+        return Err(BuildError::LibDirIsFile(lib_dir_name));
+    }
+
+    let mut vec = vec![];
+    for entry in fs::read_dir(&lib_dir)
+        .map_err(|err| BuildError::ObjDirFail(lib_dir_name.clone(), err.into()))?
+    {
+        let path =
+            entry.map_err(|err| BuildError::LibDirFail(lib_dir_name.clone(), err.into()))?.path();
+        if path.is_dir() {
+            continue;
+        }
+        if path.extension().unwrap_or_default().to_string_lossy() != Product::LIB_EXTENSION {
+            continue;
+        }
+        vec.push(path);
+    }
+    Ok(vec)
 }
 
 fn read_all_objects(args: &Args) -> Result<Vec<Module>, MainError> {

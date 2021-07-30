@@ -67,8 +67,8 @@ fn main() {
 }
 
 fn compile(args: &Args) -> Result<(), MainError> {
-    let dir = args.output.clone();
-    fs::create_dir_all(dir.clone()).map_err(|err| BuildError::OutputDir {
+    let dir = &args.output;
+    fs::create_dir_all(dir).map_err(|err| BuildError::OutputDir {
         dir: dir.to_string_lossy().to_string(),
         details: Box::new(err),
     })?;
@@ -158,18 +158,18 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     })?;
 
     if args.verbose >= 2 {
-        eprintln!("\n\x1B[1;33m Printing\x1B[0m module dump:");
-        println!("{:?}\n", module);
+        eprintln!("\x1B[0;35m Printing\x1B[0m module dump:");
+        println!("{}\n", module);
     }
 
     if args.test_lib || args.test_disassemble {
         let lib: Lib<ReservedOp> =
             Lib::with(&module.isae, module.code, module.data, module.libs).map_err(|err| {
-                BuildError::LibraryCreation { file: dest_name.clone(), details: err }
+                BuildError::LibraryAssembling { file: dest_name.clone(), details: err }
             })?;
 
         if args.verbose >= 2 {
-            eprintln!("\x1B[1;33m Printing\x1B[0m library dump:");
+            eprintln!("\x1B[0;35m Printing\x1B[0m library dump:");
             println!("{}", lib);
         }
 
@@ -178,7 +178,7 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
                 lib.disassemble().map_err(|_| BuildError::Disassembling { file: dest_name })?;
 
             if args.verbose >= 2 {
-                eprintln!("\x1B[1;33m Printing\x1B[0m module disassemply:");
+                eprintln!("\x1B[0;35m Printing\x1B[0m module disassemply:");
                 for instr in code {
                     println!("\t\t{}", instr);
                 }
