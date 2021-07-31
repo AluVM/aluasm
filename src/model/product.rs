@@ -62,12 +62,26 @@ pub struct DyLib {
 impl DyLib {
     #[inline]
     pub fn lib_id(&self) -> LibId { self.inner.lib_id() }
+
+    #[inline]
+    pub fn name(&self) -> &str { &self.inner.name }
+
+    #[inline]
+    pub fn org(&self) -> &str { &self.inner.org }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct DyBin {
     pub(crate) inner: DyInner,
     pub entry_point: u16,
+}
+
+impl DyBin {
+    #[inline]
+    pub fn name(&self) -> &str { &self.inner.name }
+
+    #[inline]
+    pub fn org(&self) -> &str { &self.inner.org }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
@@ -80,10 +94,27 @@ impl Product {
     pub const BIN_EXTENSION: &'static str = "rex";
     pub const LIB_EXTENSION: &'static str = "ald";
 
+    #[inline]
     pub fn file_extension(&self) -> &'static str {
         match self {
             Product::Lib(_) => Self::LIB_EXTENSION,
             Product::Bin(_) => Self::BIN_EXTENSION,
+        }
+    }
+
+    #[inline]
+    pub fn name(&self) -> &str {
+        match self {
+            Product::Lib(lib) => lib.name(),
+            Product::Bin(bin) => bin.name(),
+        }
+    }
+
+    #[inline]
+    pub fn org(&self) -> &str {
+        match self {
+            Product::Lib(lib) => lib.org(),
+            Product::Bin(bin) => bin.org(),
         }
     }
 }

@@ -120,7 +120,7 @@ fn link(args: &Args) -> Result<(), MainError> {
     let mut path = args.obj_dir.clone();
     path.push(&args.file);
     path.set_extension("ao");
-    let (module, module_name) = read_object(&path, &args)?;
+    let module = read_object(&path, &args)?;
 
     let mut libs = enumerate_libs(&args.target_dir)?;
     for path in &args.lib_dirs {
@@ -162,7 +162,7 @@ fn link(args: &Args) -> Result<(), MainError> {
         file: target_name.clone(),
         details: Box::new(err),
     })?;
-    eprintln!("\x1B[1;32m   Saving\x1B[0m {} to `{}`", module_name, target_path.display());
+    eprintln!("\x1B[1;32m   Saving\x1B[0m {} to `{}`", product.name(), target_path.display());
     product.encode(file).map_err(|err| BuildError::ProductFileWrite {
         file: target_name,
         details: Box::new(err),
@@ -212,13 +212,13 @@ fn read_all_objects(args: &Args) -> Result<Vec<Module>, MainError> {
         if path.is_dir() {
             continue;
         }
-        vec.push(read_object(&path, &args)?.0);
+        vec.push(read_object(&path, &args)?);
     }
 
     Ok(vec)
 }
 
-fn read_object(path: &PathBuf, _args: &Args) -> Result<(Module, String), MainError> {
+fn read_object(path: &PathBuf, _args: &Args) -> Result<Module, MainError> {
     let file_name = path
         .file_name()
         .ok_or(BuildError::NotFile(path.to_string_lossy().to_string()))?
@@ -238,5 +238,5 @@ fn read_object(path: &PathBuf, _args: &Args) -> Result<(Module, String), MainErr
 
     let module = Module::decode(fd).map_err(|err| MainError::Module(err, file_name.clone()))?;
 
-    Ok((module, file_name))
+    Ok(module)
 }
