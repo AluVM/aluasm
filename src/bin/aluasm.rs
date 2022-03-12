@@ -17,7 +17,7 @@ use aluasm::parser::{Parser, Rule};
 use aluasm::{BuildError, LexerError, MainError};
 use aluvm::data::encoding::Encode;
 use aluvm::isa::Instr;
-use clap::{AppSettings, Clap};
+use clap::{AppSettings, Parser as Clap};
 use pest::Parser as ParserTrait;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Clap)]
@@ -53,7 +53,7 @@ pub struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = Clap::parse();
     compile(&args).unwrap_or_else(|err| {
         eprintln!("{}\n", err);
         exit(1)

@@ -15,7 +15,7 @@ use aluasm::module::Module;
 use aluasm::product::Product;
 use aluasm::{BuildError, MainError};
 use aluvm::data::encoding::{Decode, Encode};
-use clap::{AppSettings, Clap};
+use clap::{AppSettings, Parser as Clap};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug, Clap)]
 #[clap(
@@ -98,9 +98,9 @@ impl Args {
 }
 
 fn main() {
-    let args: Args = Args::parse().processed();
+    let args: Args = Clap::parse();
 
-    link(&args).unwrap_or_else(|err| {
+    link(&args.processed()).unwrap_or_else(|err| {
         eprintln!("{}\n", err);
         exit(1)
     });
