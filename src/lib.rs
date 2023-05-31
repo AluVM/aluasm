@@ -18,11 +18,10 @@ use std::num::ParseIntError;
 
 use aluvm::data::encoding::DecodeError;
 use aluvm::isa::Instr;
-use aluvm::libs::{CodeEofError, IsaSegError};
+use aluvm::library::{CodeEofError, IsaSegError};
 use amplify::{hex, IoError};
 pub use model::{ast, issues, module, product};
 pub use pipelines::{analyzer, compiler, linker, parser};
-use rustc_apfloat::ParseError;
 
 use crate::issues::Src;
 use crate::module::CallTableError;
@@ -326,7 +325,7 @@ pub enum CompilerError {
     /// unable to construct float representation of literal `{0}.{1}e{2}`
     ///
     /// details: {3:?}
-    FloatConstruction(u128, u128, u16, ParseError),
+    FloatConstruction(u128, u128, u16, amplify::num::apfloat::ParseError),
 }
 
 impl CompilerError {

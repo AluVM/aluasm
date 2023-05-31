@@ -10,7 +10,7 @@ use std::fmt::{self, Display, Formatter, Write as WriteTrait};
 use std::io::{self, Read, Write};
 
 use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
-use aluvm::libs::{Lib, LibId};
+use aluvm::library::{Lib, LibId};
 
 use crate::module::Variable;
 

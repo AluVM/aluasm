@@ -18,14 +18,13 @@ use aluvm::isa::{
     ArithmeticOp, BitwiseOp, Bytecode, BytesOp, CmpOp, ControlFlowOp, DigestOp, Flag, Instr,
     MoveOp, ParseFlagError, PutOp, Secp256k1Op,
 };
-use aluvm::libs::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
+use aluvm::library::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{
     NumericRegister, Reg32, RegA, RegAF, RegAFR, RegAR, RegAll, RegR, RegS, Register,
 };
 use aluvm::Isa;
-use amplify::num::u1024;
+use amplify::num::{u1024, apfloat::ieee};
 use pest::Span;
-use rustc_apfloat::ieee;
 
 use crate::ast::{
     Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement, Var, VarType,
@@ -214,7 +213,7 @@ impl<'i> Routine<'i> {
             let pos = cursor.pos();
             instr_map.push(pos);
             let instr = statement.compile(program, call_table, issues)?;
-            if let Err(err) = instr.write(cursor) {
+            if let Err(err) = instr.encode(cursor) {
                 issues.push_error(err.into(), &statement.span);
                 break;
             }
@@ -829,14 +828,14 @@ impl<'i> Statement<'i> {
             }
             Operator::add => {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
-                    if step > u1024::from(i16::MAX as u16) {
+                    if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
                         idx! {1},
-                        Step::with(step.low_u32() as i16),
+                        Step::with(step.low_u32() as i8),
                     ))
                 } else {
                     let reg = reg! {0};
@@ -858,14 +857,14 @@ impl<'i> Statement<'i> {
             }
             Operator::sub => {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
-                    if step > u1024::from(i16::MAX as u16) {
+                    if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
                         idx! {1},
-                        Step::with(-(step.low_u32() as i16)),
+                        Step::with(-(step.low_u32() as i8)),
                     ))
                 } else {
                     let reg = reg! {0};

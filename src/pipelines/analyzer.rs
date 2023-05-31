@@ -12,7 +12,7 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 
 use aluvm::data::{FloatLayout, IntLayout};
-use aluvm::libs::LibId;
+use aluvm::library::LibId;
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
 use amplify::hex::FromHex;
