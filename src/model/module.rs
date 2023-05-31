@@ -13,8 +13,8 @@ use std::vec::IntoIter;
 
 use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
 use aluvm::data::{ByteStr, FloatLayout, IntLayout, MaybeNumber, Number, NumberLayout};
-use aluvm::libs::constants::LIBS_SEGMENT_MAX_COUNT;
-use aluvm::libs::{Lib, LibId, LibSegOverflow, LibSite};
+use aluvm::library::constants::LIBS_SEGMENT_MAX_COUNT;
+use aluvm::library::{Lib, LibId, LibSegOverflow, LibSite};
 use amplify::hex::format_hex;
 use amplify::IoError;
 

@@ -9,9 +9,10 @@ use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::string::FromUtf8Error;
 
 use aluvm::isa::{BytecodeError, ParseFlagError};
-use aluvm::libs::{LibId, LibIdError, LibSegOverflow, WriteError};
+use aluvm::library::{LibId, LibSegOverflow, WriteError};
 use aluvm::reg::RegBlock;
 use aluvm::Isa;
+use baid58::Baid58ParseError;
 use pest::iterators::Pair;
 use pest::Span;
 
@@ -84,8 +85,8 @@ pub enum SyntaxError {
     /// re-definition of `{0}` library name
     RepeatedLibName(String),
 
-    /// incorrect library id Bech32 string `{0}` ({1})
-    WrongLibId(String, LibIdError),
+    /// incorrect library id Baid58 string `{0}` ({1})
+    WrongLibId(String, Baid58ParseError),
 
     /// re-definition of `{0}` constant
     RepeatedConstName(String),

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use aluvm::data::encoding::Decode;
 use aluvm::isa::{ControlFlowOp, Instr};
-use aluvm::libs::{Cursor, Lib, LibId, Write};
+use aluvm::library::{Cursor, Lib, LibId, Write};
 
 use crate::issues::{self, Issues, ReferenceError, ReferenceWarning};
 use crate::module::Module;

@@ -13,7 +13,7 @@ use std::hash::Hash;
 use std::str::FromStr;
 
 use aluvm::data::{FloatLayout, IntLayout};
-use aluvm::libs::LibId;
+use aluvm::library::LibId;
 use aluvm::reg::{Reg32, RegAll};
 use aluvm::Isa;
 use amplify::num::u1024;
