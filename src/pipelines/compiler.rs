@@ -23,7 +23,8 @@ use aluvm::reg::{
     NumericRegister, Reg32, RegA, RegAF, RegAFR, RegAR, RegAll, RegR, RegS, Register,
 };
 use aluvm::Isa;
-use amplify::num::{u1024, apfloat::ieee};
+use amplify::num::apfloat::ieee;
+use amplify::num::u1024;
 use pest::Span;
 
 use crate::ast::{

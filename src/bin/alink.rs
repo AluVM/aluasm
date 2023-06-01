@@ -6,7 +6,6 @@
 // for Pandora Core AG
 
 #![allow(clippy::result_large_err)]
-
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
