@@ -106,7 +106,7 @@ impl<'i> Program<'i> {
         }
 
         let mut vars = vec![];
-        for (_, v) in &self.input {
+        for v in self.input.values() {
             vars.push(v.compile(&mut issues)?);
         }
 
@@ -225,11 +225,9 @@ impl<'i> Routine<'i> {
                     .unwrap_or(no as u16);
                 jump_map.insert(pos, instr_no);
             }
-            match instr {
-                Instr::ControlFlow(ControlFlowOp::Call(site) | ControlFlowOp::Exec(site)) => {
-                    call_table.get_mut(site)?.sites.insert(pos);
-                }
-                _ => {}
+            if let Instr::ControlFlow(ControlFlowOp::Call(site) | ControlFlowOp::Exec(site)) = instr
+            {
+                call_table.get_mut(site)?.sites.insert(pos);
             };
 
             if do_dump {
@@ -547,7 +545,7 @@ impl<'i> Statement<'i> {
         self.operands
             .get(no as usize)
             .and_then(|op| match op {
-                Operand::Goto(goto, span) => Some((goto.clone(), span.clone())),
+                Operand::Goto(goto, span) => Some((goto.clone(), *span)),
                 Operand::Reg { span, .. }
                 | Operand::Const(_, span)
                 | Operand::Lit(_, span)
@@ -604,10 +602,10 @@ impl<'i> Statement<'i> {
                     LibId::default()
                 });
                 match call_table.find_or_insert(id, routine) {
-                    Ok(pos) => return LibSite::with(pos, id),
+                    Ok(pos) => LibSite::with(pos, id),
                     Err(err) => {
                         issues.push_error(err.into(), span);
-                        return LibSite::default();
+                        LibSite::default()
                     }
                 }
             }
@@ -620,7 +618,7 @@ impl<'i> Statement<'i> {
                     },
                     op.as_span(),
                 );
-                return LibSite::default();
+                LibSite::default()
             }
         }
     }

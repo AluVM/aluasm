@@ -79,7 +79,7 @@ impl CallTable {
         self.0
             .iter()
             .flat_map(|(id, routines)| {
-                routines.into_iter().map(move |call_ref| (*id, call_ref.routine.as_str()))
+                routines.iter().map(move |call_ref| (*id, call_ref.routine.as_str()))
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -90,7 +90,7 @@ impl CallTable {
             .iter()
             .flat_map(|(id, routines)| {
                 routines
-                    .into_iter()
+                    .iter()
                     .map(move |call_ref| (*id, call_ref.routine.as_str(), &call_ref.sites))
             })
             .collect::<Vec<_>>()
@@ -283,7 +283,7 @@ impl Encode for DataType {
                 count += 1u8.encode(&mut writer)?;
                 let len = layout.bytes() as usize;
                 count += len;
-                writer.write_all(&default.unwrap().as_ref())?;
+                writer.write_all(default.unwrap().as_ref())?;
                 Ok(count)
             }
             DataType::Float(layout, _) => {

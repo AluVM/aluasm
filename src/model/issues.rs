@@ -363,7 +363,7 @@ impl<'i, S> Display for Issues<'i, S>
 where
     S: Stage,
 {
-    fn fmt<'f>(&self, f: &mut Formatter<'f>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         fn _f(f: &mut Formatter<'_>, issue: &impl Issue, src: &Option<Src>) -> fmt::Result {
             write!(
                 f,
@@ -415,12 +415,12 @@ pub trait ToSrc<'i> {
 
 impl<'i> ToSrc<'i> for Span<'i> {
     #[inline]
-    fn to_src(&self) -> Src<'i> { Src(self.clone()) }
+    fn to_src(&self) -> Src<'i> { Src(*self) }
 }
 
 impl<'i> ToSrc<'i> for &Span<'i> {
     #[inline]
-    fn to_src(&self) -> Src<'i> { Src((*self).clone()) }
+    fn to_src(&self) -> Src<'i> { Src(*(*self)) }
 }
 
 impl<'i> ToSrc<'i> for Pair<'i, Rule> {
@@ -440,7 +440,7 @@ impl<'i> Src<'i> {
 }
 
 impl<'i> Display for Src<'i> {
-    fn fmt<'f>(&self, f: &mut Formatter<'f>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             f.write_str(self.0.as_str())?;
             return Ok(());
@@ -457,7 +457,7 @@ impl<'i> Display for Src<'i> {
             }
             f.write_str("\x1B[0m\n")?;
         }
-        writeln!(f, "")
+        Ok(())
     }
 }
 
