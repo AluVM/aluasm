@@ -23,22 +23,6 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: check
-  features:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - name: Default build
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --features ${{ matrix.feature }}
   platforms:
     runs-on: ${{ matrix.os }}
     strategy:
