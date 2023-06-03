@@ -10,7 +10,7 @@ use std::fmt::{self, Display, Formatter, Write as WriteTrait};
 use std::io::{self, Read, Write};
 
 use aluvm::data::encoding::{Decode, DecodeError, Encode, EncodeError, MaxLenWord};
-use aluvm::libs::{Lib, LibId};
+use aluvm::library::{Lib, LibId};
 
 use crate::module::Variable;
 
@@ -221,7 +221,7 @@ impl Encode for DyLib {
     type Error = EncodeError;
 
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
-        writer.write(&MAGIC_DYLIB)?;
+        writer.write_all(&MAGIC_DYLIB)?;
         Ok(10
             + self.lib_id().encode(&mut writer)?
             + self.inner.encode(&mut writer)?
@@ -264,7 +264,7 @@ impl Encode for DyBin {
     type Error = EncodeError;
 
     fn encode(&self, mut writer: impl Write) -> Result<usize, Self::Error> {
-        writer.write(&MAGIC_DYBIN)?;
+        writer.write_all(&MAGIC_DYBIN)?;
         Ok(10 + self.inner.encode(&mut writer)? + self.entry_point.encode(&mut writer)?)
     }
 }

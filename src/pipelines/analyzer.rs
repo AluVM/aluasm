@@ -12,7 +12,7 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 
 use aluvm::data::{FloatLayout, IntLayout};
-use aluvm::libs::LibId;
+use aluvm::library::LibId;
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
 use amplify::hex::FromHex;
@@ -194,19 +194,25 @@ impl<'i> Analyze<'i> for Routine<'i> {
         }
         .to_owned();
 
-        let mut labels = bmap![];
+        let mut labels: std::collections::BTreeMap<String, u16> = bmap![];
         let code =
             iter.enumerate().try_fold(Vec::<Statement>::new(), |mut vec, (index, pair)| {
                 let span = pair.as_span();
                 let op = Statement::analyze(pair, issues)?;
                 if let Some(label) = op.label.clone() {
-                    if labels.contains_key(&label.0) {
-                        issues.push_error(
-                            SyntaxError::RepeatedLabel { label: label.0, routine: name.clone() },
-                            &span,
-                        );
-                    } else {
-                        labels.insert(label.0, index as u16);
+                    match labels.contains_key(&label.0) {
+                        true => {
+                            issues.push_error(
+                                SyntaxError::RepeatedLabel {
+                                    label: label.0,
+                                    routine: name.clone(),
+                                },
+                                &span,
+                            );
+                        }
+                        false => {
+                            labels.insert(label.0, index as u16);
+                        }
                     }
                 }
                 vec.push(op);
@@ -253,7 +259,7 @@ impl<'i> Analyze<'i> for Statement<'i> {
             let chr = pair
                 .as_str()
                 .chars()
-                .nth(0)
+                .next()
                 .ok_or_else(|| LexerError::FlagWithoutValue(span.to_src()))?;
             match flags {
                 FlagSet::None => flags = FlagSet::One(chr, pair.as_span()),

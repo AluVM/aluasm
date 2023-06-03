@@ -5,6 +5,7 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
+#![allow(clippy::result_large_err)]
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -120,7 +121,7 @@ fn link(args: &Args) -> Result<(), MainError> {
     let mut path = args.obj_dir.clone();
     path.push(&args.file);
     path.set_extension("ao");
-    let module = read_object(&path, &args)?;
+    let module = read_object(&path, args)?;
 
     let mut libs = enumerate_libs(&args.target_dir)?;
     for path in &args.lib_dirs {
@@ -179,7 +180,7 @@ fn enumerate_libs(lib_dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, BuildError>
     }
 
     let mut vec = vec![];
-    for entry in fs::read_dir(&lib_dir)
+    for entry in fs::read_dir(lib_dir)
         .map_err(|err| BuildError::ObjDirFail(lib_dir_name.clone(), err.into()))?
     {
         let path =
@@ -212,7 +213,7 @@ fn read_all_objects(args: &Args) -> Result<Vec<Module>, MainError> {
         if path.is_dir() {
             continue;
         }
-        vec.push(read_object(&path, &args)?);
+        vec.push(read_object(&path, args)?);
     }
 
     Ok(vec)

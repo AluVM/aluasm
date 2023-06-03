@@ -18,14 +18,14 @@ use aluvm::isa::{
     ArithmeticOp, BitwiseOp, Bytecode, BytesOp, CmpOp, ControlFlowOp, DigestOp, Flag, Instr,
     MoveOp, ParseFlagError, PutOp, Secp256k1Op,
 };
-use aluvm::libs::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
+use aluvm::library::{Cursor, IsaSeg, Lib, LibId, LibSeg, LibSite, Read, Write};
 use aluvm::reg::{
     NumericRegister, Reg32, RegA, RegAF, RegAFR, RegAR, RegAll, RegR, RegS, Register,
 };
 use aluvm::Isa;
+use amplify::num::apfloat::ieee;
 use amplify::num::u1024;
 use pest::Span;
-use rustc_apfloat::ieee;
 
 use crate::ast::{
     Const, FlagSet, Literal, Operand, Operator, Program, Routine, Statement, Var, VarType,
@@ -106,7 +106,7 @@ impl<'i> Program<'i> {
         }
 
         let mut vars = vec![];
-        for (_, v) in &self.input {
+        for v in self.input.values() {
             vars.push(v.compile(&mut issues)?);
         }
 
@@ -214,7 +214,7 @@ impl<'i> Routine<'i> {
             let pos = cursor.pos();
             instr_map.push(pos);
             let instr = statement.compile(program, call_table, issues)?;
-            if let Err(err) = instr.write(cursor) {
+            if let Err(err) = instr.encode(cursor) {
                 issues.push_error(err.into(), &statement.span);
                 break;
             }
@@ -225,11 +225,9 @@ impl<'i> Routine<'i> {
                     .unwrap_or(no as u16);
                 jump_map.insert(pos, instr_no);
             }
-            match instr {
-                Instr::ControlFlow(ControlFlowOp::Call(site) | ControlFlowOp::Exec(site)) => {
-                    call_table.get_mut(site)?.sites.insert(pos);
-                }
-                _ => {}
+            if let Instr::ControlFlow(ControlFlowOp::Call(site) | ControlFlowOp::Exec(site)) = instr
+            {
+                call_table.get_mut(site)?.sites.insert(pos);
             };
 
             if do_dump {
@@ -547,7 +545,7 @@ impl<'i> Statement<'i> {
         self.operands
             .get(no as usize)
             .and_then(|op| match op {
-                Operand::Goto(goto, span) => Some((goto.clone(), span.clone())),
+                Operand::Goto(goto, span) => Some((goto.clone(), *span)),
                 Operand::Reg { span, .. }
                 | Operand::Const(_, span)
                 | Operand::Lit(_, span)
@@ -604,10 +602,10 @@ impl<'i> Statement<'i> {
                     LibId::default()
                 });
                 match call_table.find_or_insert(id, routine) {
-                    Ok(pos) => return LibSite::with(pos, id),
+                    Ok(pos) => LibSite::with(pos, id),
                     Err(err) => {
                         issues.push_error(err.into(), span);
-                        return LibSite::default();
+                        LibSite::default()
                     }
                 }
             }
@@ -620,7 +618,7 @@ impl<'i> Statement<'i> {
                     },
                     op.as_span(),
                 );
-                return LibSite::default();
+                LibSite::default()
             }
         }
     }
@@ -829,14 +827,14 @@ impl<'i> Statement<'i> {
             }
             Operator::add => {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
-                    if step > u1024::from(i16::MAX as u16) {
+                    if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
                         idx! {1},
-                        Step::with(step.low_u32() as i16),
+                        Step::with(step.low_u32() as i8),
                     ))
                 } else {
                     let reg = reg! {0};
@@ -858,14 +856,14 @@ impl<'i> Statement<'i> {
             }
             Operator::sub => {
                 if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
-                    if step > u1024::from(i16::MAX as u16) {
+                    if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
                         reg! {1},
                         idx! {1},
-                        Step::with(-(step.low_u32() as i16)),
+                        Step::with(-(step.low_u32() as i8)),
                     ))
                 } else {
                     let reg = reg! {0};

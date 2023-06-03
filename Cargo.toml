@@ -19,9 +19,9 @@ name = "aluasm"
 name = "alink"
 
 [dependencies]
-amplify = "3.7"
-aluvm = { version = "0.4", features = ["all"] }
-rustc_apfloat = "0.1.3"
+amplify = "4.0.0"
+aluvm = { version = "0.10.2", features = ["std", "secp256k1"] }
+baid58 = "0.3.2"
 pest = "2.1"
 pest_derive = "2.1"
 clap = { version = "3.1.6", features = ["derive"] }

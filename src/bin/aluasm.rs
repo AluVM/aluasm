@@ -5,6 +5,7 @@
 //     Dr. Maxim Orlovsky <orlovsky@pandoracore.com>
 // for Pandora Core AG
 
+#![allow(clippy::result_large_err)]
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
@@ -69,7 +70,7 @@ fn compile(args: &Args) -> Result<(), MainError> {
     })?;
 
     for file in &args.files {
-        compile_file(file, &args)?;
+        compile_file(file, args)?;
     }
 
     Ok(())
@@ -158,17 +159,15 @@ fn compile_file(file: &PathBuf, args: &Args) -> Result<(), MainError> {
     }
 
     if args.test {
-        if args.test {
-            let code = module
-                .as_static_lib()
-                .disassemble::<Instr>()
-                .map_err(|_| BuildError::Disassembling { file: dest_name })?;
+        let code = module
+            .as_static_lib()
+            .disassemble::<Instr>()
+            .map_err(|_| BuildError::Disassembling { file: dest_name })?;
 
-            if args.verbose >= 2 {
-                eprintln!("\x1B[0;35m Printing\x1B[0m module disassembly:");
-                for instr in code {
-                    println!("\t\t{}", instr);
-                }
+        if args.verbose >= 2 {
+            eprintln!("\x1B[0;35m Printing\x1B[0m module disassembly:");
+            for instr in code {
+                println!("\t\t{}", instr);
             }
         }
     }

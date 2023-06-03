@@ -9,9 +9,10 @@ use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::string::FromUtf8Error;
 
 use aluvm::isa::{BytecodeError, ParseFlagError};
-use aluvm::libs::{LibId, LibIdError, LibSegOverflow, WriteError};
+use aluvm::library::{LibId, LibSegOverflow, WriteError};
 use aluvm::reg::RegBlock;
 use aluvm::Isa;
+use baid58::Baid58ParseError;
 use pest::iterators::Pair;
 use pest::Span;
 
@@ -84,8 +85,8 @@ pub enum SyntaxError {
     /// re-definition of `{0}` library name
     RepeatedLibName(String),
 
-    /// incorrect library id Bech32 string `{0}` ({1})
-    WrongLibId(String, LibIdError),
+    /// incorrect library id Baid58 string `{0}` ({1})
+    WrongLibId(String, Baid58ParseError),
 
     /// re-definition of `{0}` constant
     RepeatedConstName(String),
@@ -363,7 +364,7 @@ impl<'i, S> Display for Issues<'i, S>
 where
     S: Stage,
 {
-    fn fmt<'f>(&self, f: &mut Formatter<'f>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         fn _f(f: &mut Formatter<'_>, issue: &impl Issue, src: &Option<Src>) -> fmt::Result {
             write!(
                 f,
@@ -415,12 +416,12 @@ pub trait ToSrc<'i> {
 
 impl<'i> ToSrc<'i> for Span<'i> {
     #[inline]
-    fn to_src(&self) -> Src<'i> { Src(self.clone()) }
+    fn to_src(&self) -> Src<'i> { Src(*self) }
 }
 
 impl<'i> ToSrc<'i> for &Span<'i> {
     #[inline]
-    fn to_src(&self) -> Src<'i> { Src((*self).clone()) }
+    fn to_src(&self) -> Src<'i> { Src(*(*self)) }
 }
 
 impl<'i> ToSrc<'i> for Pair<'i, Rule> {
@@ -440,7 +441,7 @@ impl<'i> Src<'i> {
 }
 
 impl<'i> Display for Src<'i> {
-    fn fmt<'f>(&self, f: &mut Formatter<'f>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             f.write_str(self.0.as_str())?;
             return Ok(());
@@ -457,7 +458,7 @@ impl<'i> Display for Src<'i> {
             }
             f.write_str("\x1B[0m\n")?;
         }
-        writeln!(f, "")
+        Ok(())
     }
 }
 
