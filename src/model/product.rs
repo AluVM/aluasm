@@ -68,6 +68,9 @@ impl DyLib {
 
     #[inline]
     pub fn org(&self) -> &str { &self.inner.org }
+
+    #[inline]
+    pub fn as_static_lib(&self) -> &Lib { &self.inner.inner }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
@@ -78,10 +81,16 @@ pub struct DyBin {
 
 impl DyBin {
     #[inline]
+    pub fn lib_id(&self) -> LibId { self.inner.lib_id() }
+
+    #[inline]
     pub fn name(&self) -> &str { &self.inner.name }
 
     #[inline]
     pub fn org(&self) -> &str { &self.inner.org }
+
+    #[inline]
+    pub fn as_static_lib(&self) -> &Lib { &self.inner.inner }
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
