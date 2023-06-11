@@ -20,7 +20,7 @@ name = "alink"
 
 [dependencies]
 amplify = "4.0.0"
-aluvm = { version = "0.10.2", features = ["std", "secp256k1"] }
+aluvm = { git = "https://github.com/6293/rust-aluvm", branch = "bytes-put", features = ["std", "secp256k1"] }
 baid58 = "0.3.2"
 pest = "2.1"
 pest_derive = "2.1"
