@@ -43,8 +43,10 @@ macro_rules! aluasm_compiler {
                     {}
         "#, main);
         let pairs = aluasm::parser::Parser::parse(aluasm::parser::Rule::program, &code).unwrap();
-        let (program, _) = aluasm::ast::Program::analyze(pairs.into_iter().next().unwrap()).unwrap();
-        let (module, _) = program.compile(&mut None).unwrap();
+        let (program, issues) = aluasm::ast::Program::analyze(pairs.into_iter().next().unwrap()).unwrap();
+        assert!(!issues.has_errors(), "error(analyze): {}", issues);
+        let (module, issues) = program.compile(&mut None).unwrap();
+        assert!(!issues.has_errors(), "error(compile): {}", issues);
         let mut runtime = aluvm::Vm::<aluvm::isa::Instr>::new();
         let program = aluvm::Prog::<aluvm::isa::Instr>::new(module.as_static_lib().clone());
         let res = runtime.run(&program, &());

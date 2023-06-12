@@ -16,7 +16,6 @@ use aluvm::library::LibId;
 use aluvm::reg::{RegA, RegAll, RegBlock, RegF, RegR};
 use aluvm::Isa;
 use amplify::hex::FromHex;
-use amplify::num::error::OverflowError;
 use amplify::num::{u1024, u5};
 use pest::iterators::Pair;
 
@@ -306,10 +305,7 @@ impl<'i> Analyze<'i> for Operand<'i> {
                 let index: u8 = index.parse().map_err(|err| {
                     LexerError::RegisterIndexNonDecimal(span.to_src(), err, index)
                 })?;
-                let index = index
-                    .checked_sub(1)
-                    .ok_or(OverflowError { max: 0, value: 0 })
-                    .and_then(u5::try_from)
+                let index = u5::try_from(index)
                     .unwrap_or_else(|_| {
                         issues.push_error(SyntaxError::RegisterIndexOutOfRange(index), &span);
                         u5::with(0)

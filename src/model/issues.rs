@@ -79,7 +79,7 @@ pub enum SyntaxError {
     /// unknown ISA extension ID `{0}`
     UnknownIsa(String),
 
-    /// register index `{0}` is out of range 1..=32
+    /// register index `{0}` is out of range 0..=31
     RegisterIndexOutOfRange(u8),
 
     /// re-definition of `{0}` library name
