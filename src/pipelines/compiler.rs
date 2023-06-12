@@ -681,7 +681,7 @@ impl<'i> Statement<'i> {
                 RegAll::A(a) => Instr::Put(PutOp::PutA(a, idx! {1}, num! {0, a})),
                 RegAll::F(f) => Instr::Put(PutOp::PutF(f, idx! {1}, num! {0, f})),
                 RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {1}, num! {0, r})),
-                RegAll::S => Instr::Bytes(BytesOp::Put(idx! {1}, str! {0}, false)),
+                RegAll::S => Instr::Bytes(BytesOp::Put(str! {0}, idx! {1}, false)),
             },
             Operator::putif => match reg! {1} {
                 RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, num! {0, a})),
@@ -1106,14 +1106,7 @@ impl<'i> Statement<'i> {
             }
             Operator::extr => {
                 let _: RegS = reg! {0};
-                let reg = reg! {0};
-                if reg != reg! {1} {
-                    issues.push_error(
-                        SemanticError::OperandRegMutBeEqual(self.operator.0),
-                        self.operands[1].as_span(),
-                    );
-                }
-                Instr::Bytes(BytesOp::Extr(idx! {0}, reg, idx! {1}, idx! {2}))
+                Instr::Bytes(BytesOp::Extr(idx! {0}, reg! {1}, idx! {1}, idx! {2}))
             }
             Operator::inj => {
                 let _: RegS = reg! {0};

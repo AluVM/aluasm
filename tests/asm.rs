@@ -35,6 +35,7 @@ macro_rules! aluasm_compiler {
         let main = main.replace(";", ";\n");
         let main = main.replace(" [", "[");
         let main = main.replace("\n[", "[");
+        let main = main.replace(",\n", ",");
         let code = format!(
             r#".ISAE ; ISA Extensions segment
                     ALU
@@ -214,6 +215,90 @@ fn float() {
             put   2.75,f32[10];
             add.f f32[8],f32[9];
             eq.e  f32[9],f32[10];
+            ret;
+    }
+}
+
+#[test]
+fn bytes_put() {
+    aluasm_succ! {
+            put   "aaa",s16[1];
+            put   "aaa",s16[2];
+            eq    s16[1],s16[2];
+            ret;
+    }
+    aluasm_fail! {
+            put   "aaa",s16[1];
+            put   "bbb",s16[2];
+            eq    s16[1],s16[2];
+            ret;
+    }
+}
+
+#[test]
+fn bytes_extr() {
+    aluasm_succ! {
+            put    "################@@@@@@",s16[0];
+            put    0,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            put    0x23232323232323232323232323232323,r128[1];
+            eq.n   r128[0],r128[1];
+            ret;
+    };
+    aluasm_succ! {
+            put    "################@@@@@@",s16[0];
+            put    3,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            put    0x40404023232323232323232323232323,r128[1];
+            eq.n   r128[0],r128[1];
+            ret;
+    }
+}
+
+#[test]
+fn bytes_extr_offset_exceed() {
+    aluasm_succ! {
+            put    "123456788901234567",s16[0];
+            put    0,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            ret;
+    }
+    aluasm_succ! {
+            put    "123456788901234567",s16[0];
+            put    1,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            ret;
+    }
+    aluasm_fail! {
+            put    "123456788901234567",s16[0];
+            put    2,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            ret;
+    }
+    aluasm_fail! {
+            put    "123456788901234567",s16[0];
+            put    2,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            ret;
+    }
+    aluasm_succ! {
+            put    "################@",s16[0];
+            put    1,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            put    0x40232323232323232323232323232323,r128[1];
+            eq.n   r128[0],r128[1];
+            ret;
+    }
+    aluasm_fail! {
+            put    "123456788901234567",s16[0];
+            put    100,a16[0];
+            extr   s16[0],r128[0],a16[0];
+            ret;
+    }
+    aluasm_fail! {
+            put    "123",s16[0];
+            put    0,a16[0];
+            extr   s16[0],r128[0],a16[0];
             ret;
     }
 }
