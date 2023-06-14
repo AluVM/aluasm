@@ -677,15 +677,15 @@ impl<'i> Statement<'i> {
                 RegAFR::F(f) => Instr::Put(PutOp::ClrF(f, idx! {0})),
                 RegAFR::R(r) => Instr::Put(PutOp::ClrR(r, idx! {0})),
             },
-            Operator::put => match reg! {1} {
-                RegAll::A(a) => Instr::Put(PutOp::PutA(a, idx! {1}, num! {0, a})),
-                RegAll::F(f) => Instr::Put(PutOp::PutF(f, idx! {1}, num! {0, f})),
-                RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {1}, num! {0, r})),
-                RegAll::S => Instr::Bytes(BytesOp::Put(str! {0}, idx! {1}, false)),
+            Operator::put => match reg! {0} {
+                RegAll::A(a) => Instr::Put(PutOp::PutA(a, idx! {0}, num! {1, a})),
+                RegAll::F(f) => Instr::Put(PutOp::PutF(f, idx! {0}, num! {1, f})),
+                RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {0}, num! {1, r})),
+                RegAll::S => Instr::Bytes(BytesOp::Put(idx! {0}, str! {1}, false)),
             },
-            Operator::putif => match reg! {1} {
-                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, num! {0, a})),
-                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {1}, num! {0, r})),
+            Operator::putif => match reg! {0} {
+                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {0}, num! {1, a})),
+                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {0}, num! {1, r})),
             },
 
             // *** Move operations
@@ -698,9 +698,9 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAFR::A(a) => Instr::Move(MoveOp::DupA(a, idx! {0}, idx! {1})),
-                    RegAFR::F(f) => Instr::Move(MoveOp::DupF(f, idx! {0}, idx! {1})),
-                    RegAFR::R(r) => Instr::Move(MoveOp::DupR(r, idx! {0}, idx! {1})),
+                    RegAFR::A(a) => Instr::Move(MoveOp::DupA(a, idx! {1}, idx! {0})),
+                    RegAFR::F(f) => Instr::Move(MoveOp::DupF(f, idx! {1}, idx! {0})),
+                    RegAFR::R(r) => Instr::Move(MoveOp::DupR(r, idx! {1}, idx! {0})),
                 }
             }
             Operator::mov => {
@@ -712,27 +712,27 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAll::A(a) => Instr::Move(MoveOp::MovA(a, idx! {0}, idx! {1})),
-                    RegAll::F(f) => Instr::Move(MoveOp::MovF(f, idx! {0}, idx! {1})),
-                    RegAll::R(r) => Instr::Move(MoveOp::MovR(r, idx! {0}, idx! {1})),
-                    RegAll::S => Instr::Bytes(BytesOp::Mov(idx! {0}, idx! {1})),
+                    RegAll::A(a) => Instr::Move(MoveOp::MovA(a, idx! {1}, idx! {0})),
+                    RegAll::F(f) => Instr::Move(MoveOp::MovF(f, idx! {1}, idx! {0})),
+                    RegAll::R(r) => Instr::Move(MoveOp::MovR(r, idx! {1}, idx! {0})),
+                    RegAll::S => Instr::Bytes(BytesOp::Mov(idx! {1}, idx! {0})),
                 }
             }
-            Operator::cnv => match (reg! {0}, reg! {1}) {
+            Operator::cnv => match (reg! {1}, reg! {0}) {
                 (RegAF::A(a1), RegAF::A(a2)) => {
-                    Instr::Move(MoveOp::CnvA(a1, idx! {0}, a2, idx! {1}))
+                    Instr::Move(MoveOp::CnvA(a1, idx! {1}, a2, idx! {0}))
                 }
                 (RegAF::F(f1), RegAF::F(f2)) => {
-                    Instr::Move(MoveOp::CnvF(f1, idx! {0}, f2, idx! {1}))
+                    Instr::Move(MoveOp::CnvF(f1, idx! {1}, f2, idx! {0}))
                 }
-                (RegAF::A(a), RegAF::F(f)) => Instr::Move(MoveOp::CnvAF(a, idx! {0}, f, idx! {1})),
-                (RegAF::F(f), RegAF::A(a)) => Instr::Move(MoveOp::CnvFA(f, idx! {0}, a, idx! {1})),
+                (RegAF::A(a), RegAF::F(f)) => Instr::Move(MoveOp::CnvAF(a, idx! {1}, f, idx! {0})),
+                (RegAF::F(f), RegAF::A(a)) => Instr::Move(MoveOp::CnvFA(f, idx! {1}, a, idx! {0})),
             },
-            Operator::cpy => match reg! {0} {
-                RegAR::A(a) => Instr::Move(MoveOp::CpyA(a, idx! {0}, reg! {1}, idx! {1})),
-                RegAR::R(r) => Instr::Move(MoveOp::CpyR(r, idx! {0}, reg! {1}, idx! {1})),
+            Operator::cpy => match reg! {1} {
+                RegAR::A(a) => Instr::Move(MoveOp::CpyA(a, idx! {1}, reg! {0}, idx! {0})),
+                RegAR::R(r) => Instr::Move(MoveOp::CpyR(r, idx! {1}, reg! {0}, idx! {0})),
             },
-            Operator::spy => Instr::Move(MoveOp::SpyAR(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
+            Operator::spy => Instr::Move(MoveOp::SpyAR(reg! {1}, idx! {1}, reg! {0}, idx! {0})),
             Operator::swp => {
                 let reg = reg! {0};
                 if reg != reg! {1} {
@@ -826,14 +826,14 @@ impl<'i> Statement<'i> {
                 Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {0}, Step::with(-1)))
             }
             Operator::add => {
-                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
+                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(1) {
                     if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
-                        reg! {1},
-                        idx! {1},
+                        reg! {0},
+                        idx! {0},
                         Step::with(step.low_u32() as i8),
                     ))
                 } else {
@@ -846,23 +846,23 @@ impl<'i> Statement<'i> {
                     }
                     match reg {
                         RegAF::A(a) => {
-                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {0}, idx! {1}))
+                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {1}, idx! {0}))
                         }
                         RegAF::F(f) => {
-                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {0}, idx! {1}))
+                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {1}, idx! {0}))
                         }
                     }
                 }
             }
             Operator::sub => {
-                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
+                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(1) {
                     if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
-                        reg! {1},
-                        idx! {1},
+                        reg! {0},
+                        idx! {0},
                         Step::with(-(step.low_u32() as i8)),
                     ))
                 } else {
@@ -1105,8 +1105,8 @@ impl<'i> Statement<'i> {
                 Instr::Bytes(BytesOp::Find(idx! {0}, idx! {1}))
             }
             Operator::extr => {
-                let _: RegS = reg! {0};
-                Instr::Bytes(BytesOp::Extr(idx! {0}, reg! {1}, idx! {1}, idx! {2}))
+                let _: RegS = reg! {1};
+                Instr::Bytes(BytesOp::Extr(idx! {1}, reg! {0}, idx! {0}, idx! {2}))
             }
             Operator::inj => {
                 let _: RegS = reg! {0};
