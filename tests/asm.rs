@@ -304,3 +304,40 @@ fn bytes_extr_offset_exceed() {
         ret;
     }
 }
+
+#[test]
+fn bytes_fill() {
+    aluasm_succ! {
+        put    s16[0],"aaaaaaaa";
+        put    s16[1],"aaabbbaa";
+        put    a16[0],3;
+        put    a16[1],6;
+        put    a8[0],98;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        eq     s16[0],s16[1];
+        ret;
+    }
+}
+#[test]
+fn bytes_fill_extend() {
+    aluasm_succ! {
+        put    s16[0],"aaaaaaaa";
+        put    s16[1],"aaaaabbbbb";
+        put    a16[0],5;
+        put    a16[1],10;
+        put    a8[0],98;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        eq     s16[0],s16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"aaaaaaaa";
+        put    s16[1],"abaaaaaa";
+        put    a16[0],1;
+        put    a16[1],2;
+        put    a8[0],98;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        eq     s16[0],s16[1];
+        ret;
+    }
+}
