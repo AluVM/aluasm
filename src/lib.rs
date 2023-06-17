@@ -10,6 +10,8 @@ extern crate pest_derive;
 #[macro_use]
 extern crate amplify;
 
+#[macro_use]
+mod macros;
 mod model;
 mod pipelines;
 
@@ -21,6 +23,8 @@ use aluvm::isa::Instr;
 use aluvm::library::{CodeEofError, IsaSegError};
 use amplify::{hex, IoError};
 pub use model::{ast, issues, module, product};
+#[doc(hidden)]
+pub use paste::paste;
 pub use pipelines::{analyzer, compiler, linker, parser};
 
 use crate::issues::Src;
