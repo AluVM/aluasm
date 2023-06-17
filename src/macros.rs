@@ -188,6 +188,13 @@ macro_rules! instr {
             ExtendFlag::Fail,
         ))
     }};
+    (len $rega:ident[$rega_idx:literal],s16[$s_idx:literal]) => {{
+        Instr::Bytes(BytesOp::Len(
+            RegS::from($s_idx),
+            $crate::_reg_tya!(Reg, $rega),
+            $crate::_reg_idx!($rega_idx),
+        ))
+    }};
     (put $reg:ident[$idx:literal], $val:literal) => {{
         let s = stringify!($val);
         let mut num = s.parse::<MaybeNumber>().expect(&format!("invalid number literal `{}`", s));

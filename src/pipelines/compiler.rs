@@ -1040,8 +1040,8 @@ impl<'i> Statement<'i> {
                 Instr::Bytes(BytesOp::Fill(idx! {0}, idx! {1}, idx! {2}, idx! {3}, flags!()))
             }
             Operator::len => {
-                let _: RegS = reg! {0};
-                Instr::Bytes(BytesOp::Len(idx! {0}, reg! {1}, idx! {1}))
+                let _: RegS = reg! {1};
+                Instr::Bytes(BytesOp::Len(idx! {1}, reg! {0}, idx! {0}))
             }
             Operator::cnt => {
                 let _: RegS = reg! {0};
