@@ -195,6 +195,13 @@ macro_rules! instr {
             $crate::_reg_idx!($rega_idx),
         ))
     }};
+    (cnt a16[$dst_idx:literal],s16[$s_idx:literal],a8[$byte_idx:literal]) => {{
+        Instr::Bytes(BytesOp::Cnt(
+            RegS::from($s_idx),
+            $crate::_reg_idx16!($byte_idx),
+            $crate::_reg_idx16!($dst_idx),
+        ))
+    }};
     (put $reg:ident[$idx:literal], $val:literal) => {{
         let s = stringify!($val);
         let mut num = s.parse::<MaybeNumber>().expect(&format!("invalid number literal `{}`", s));

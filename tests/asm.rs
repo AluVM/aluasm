@@ -384,3 +384,31 @@ fn bytes_len_overflow() {
         ret;
     }
 }
+
+#[test]
+fn bytes_cnt() {
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    a8[0],108;
+        put    a16[0],3;
+        cnt    a16[1],s16[0],a8[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_cnt_uninitialized_byte() {
+    aluasm_fail! {
+        put    s16[0],"hello world";
+        cnt    a16[1],s16[0],a8[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    a16[1],1;
+        cnt    a16[1],s16[0],a8[0];
+        eq.e   a16[0],a16[1];
+        ret;
+    }
+}
