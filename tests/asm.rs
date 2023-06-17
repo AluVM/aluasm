@@ -373,4 +373,14 @@ fn bytes_len_overflow() {
         len    a8[2],s16[0];
         ret;
     }
+    aluasm_succ! {
+        put    a16[0],0;
+        put    a16[1],255;
+        put    a8[0],97;
+        put    a8[2],1;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        len    a8[2],s16[0];
+        eq.e   a8[2],a8[3];
+        ret;
+    }
 }
