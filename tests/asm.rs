@@ -236,6 +236,12 @@ fn bytes_put() {
         eq    s16[1],s16[2];
         ret;
     }
+    aluasm_succ! {
+        put   s16[1],"";
+        put   s16[2],"";
+        eq    s16[1],s16[2];
+        ret;
+    }
 }
 
 #[test]
@@ -409,6 +415,15 @@ fn bytes_cnt_uninitialized_byte() {
         put    a16[1],1;
         cnt    a16[1],s16[0],a8[0];
         eq.e   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_cnt_empty_string() {
+    aluasm_fail! {
+        put    s16[0],"";
+        cnt    a16[1],s16[0],a8[0];
         ret;
     }
 }
