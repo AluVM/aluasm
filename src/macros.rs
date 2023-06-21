@@ -217,6 +217,10 @@ macro_rules! instr {
             $crate::_reg_idx!($len_dst_idx),
         ))
     }};
+    (find s16[$str_idx:literal],s16[$fragment_idx:literal],a16[$should_be_0:literal]) => {{
+        assert_eq!(0, $should_be_0);
+        Instr::Bytes(BytesOp::Find(RegS::from($str_idx), RegS::from($fragment_idx)))
+    }};
     (put $reg:ident[$idx:literal], $val:literal) => {{
         let s = stringify!($val);
         let mut num = s.parse::<MaybeNumber>().expect(&format!("invalid number literal `{}`", s));

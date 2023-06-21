@@ -1090,16 +1090,16 @@ impl<'i> Statement<'i> {
             Operator::find => {
                 let _: RegS = reg! {0};
                 let _: RegS = reg! {1};
-                let reg: RegA = reg! {3};
-                let idx: Reg32 = idx! {3};
-                if reg != RegA::A16 || idx != Reg32::Reg1 {
+                let reg: RegA = reg! {2};
+                let idx: Reg32 = idx! {2};
+                if reg != RegA::A16 || idx != Reg32::Reg0 {
                     issues.push_error(
                         SemanticError::OperandWrongReg {
                             operator: self.operator.0,
-                            pos: 3,
+                            pos: 2,
                             expected: "a16[0] register",
                         },
-                        self.operands[3].as_span(),
+                        self.operands[2].as_span(),
                     );
                 }
                 Instr::Bytes(BytesOp::Find(idx! {0}, idx! {1}))

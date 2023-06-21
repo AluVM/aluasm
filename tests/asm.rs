@@ -481,3 +481,53 @@ fn bytes_con() {
         ret;
     }
 }
+
+#[test]
+fn bytes_find() {
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"l";
+        put    a16[1],3;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"ll";
+        put    a16[1],1;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"lll";
+        put    a16[1],0;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"hello world!!!";
+        put    a16[1],0;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_find_max() {
+    aluasm_succ! {
+        put    a16[1],0;
+        put    a16[2],65535;
+        put    a8[0],97;
+        fill.e s16[0],a16[1],a16[2],a8[0];
+        put    s16[1],"a";
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[2];
+        ret;
+    }
+}
