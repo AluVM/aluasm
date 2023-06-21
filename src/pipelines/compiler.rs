@@ -1040,34 +1040,34 @@ impl<'i> Statement<'i> {
                 Instr::Bytes(BytesOp::Fill(idx! {0}, idx! {1}, idx! {2}, idx! {3}, flags!()))
             }
             Operator::len => {
-                let _: RegS = reg! {0};
-                Instr::Bytes(BytesOp::Len(idx! {0}, reg! {1}, idx! {1}))
+                let _: RegS = reg! {1};
+                Instr::Bytes(BytesOp::Len(idx! {1}, reg! {0}, idx! {0}))
             }
             Operator::cnt => {
-                let _: RegS = reg! {0};
-                let reg1: RegA = reg! {1};
-                let reg2: RegA = reg! {2};
-                if reg1 != RegA::A8 {
+                let _: RegS = reg! {1};
+                let byte_reg: RegA = reg! {2};
+                let dst_reg: RegA = reg! {0};
+                if byte_reg != RegA::A8 {
                     issues.push_error(
                         SemanticError::OperandWrongReg {
                             operator: self.operator.0,
-                            pos: 1,
+                            pos: 2,
                             expected: "a8 register",
                         },
                         self.operands[1].as_span(),
                     );
                 }
-                if reg2 != RegA::A16 {
+                if dst_reg != RegA::A16 {
                     issues.push_error(
                         SemanticError::OperandWrongReg {
                             operator: self.operator.0,
-                            pos: 2,
+                            pos: 0,
                             expected: "a16 register",
                         },
                         self.operands[2].as_span(),
                     );
                 }
-                Instr::Bytes(BytesOp::Cnt(idx! {0}, idx! {1}, idx! {2}))
+                Instr::Bytes(BytesOp::Cnt(idx! {1}, idx! {2}, idx! {0}))
             }
             Operator::con => {
                 let _: RegS = reg! {0};

@@ -1,6 +1,6 @@
 macro_rules! aluasm_succ {
     ($( $tt:tt )+) => { {
-        aluvm_macro_succ! { $( $tt )+ };
+        aluasm_macro_succ! { $( $tt )+ };
         let (res, runtime) = aluasm_compiler! { $( $tt )+ };
         assert!(res, "aluasm_compiler: expected success:\n{:#?}", runtime.registers);
     } }
@@ -8,22 +8,22 @@ macro_rules! aluasm_succ {
 
 macro_rules! aluasm_fail {
     ($( $tt:tt )+) => { {
-        aluvm_macro_fail! { $( $tt )+ };
+        aluasm_macro_fail! { $( $tt )+ };
         let (res, runtime) = aluasm_compiler! { $( $tt )+ };
         assert!(!res, "aluasm_compiler: expected failure:\n{:#?}", runtime.registers);
     } }
 }
 
-macro_rules! aluvm_macro_succ {
+macro_rules! aluasm_macro_succ {
     ($( $tt:tt )+) => { {
-        let (res, runtime) = aluvm_macro! { $( $tt )+ };
+        let (res, runtime) = aluasm_macro! { $( $tt )+ };
         assert!(res, "aluvm_macro: expected success\n{:#?}", runtime.registers);
     } }
 }
 
-macro_rules! aluvm_macro_fail {
+macro_rules! aluasm_macro_fail {
     ($( $tt:tt )+) => { {
-        let (res, runtime) = aluvm_macro! { $( $tt )+ };
+        let (res, runtime) = aluasm_macro! { $( $tt )+ };
         assert!(!res, "aluvm_macro: expected failure\n{:#?}", runtime.registers);
     } }
 }
@@ -32,10 +32,11 @@ macro_rules! aluasm_compiler {
     ($( $tt:tt )+) => { {
         use pest::Parser;
         let main = stringify!($( $tt )+);
-        let main = main.replace(";", ";\n");
         let main = main.replace(" [", "[");
         let main = main.replace("\n[", "[");
         let main = main.replace(",\n", ",");
+        let main = main.replace("\n", " ");
+        let main = main.replace(";", ";\n");
         let code = format!(
             r#".ISAE ; ISA Extensions segment
                     ALU
@@ -54,10 +55,10 @@ macro_rules! aluasm_compiler {
     } }
 }
 
-macro_rules! aluvm_macro {
+macro_rules! aluasm_macro {
     ($( $tt:tt )+) => { {
         let mut runtime = aluvm::Vm::<aluvm::isa::Instr>::new();
-        let code = aluvm::aluasm! { $( $tt )+ };
+        let code = aluasm::aluasm! { $( $tt )+ };
         let program = aluvm::Prog::<aluvm::isa::Instr>::new(aluvm::library::Lib::assemble(&code).unwrap());
         let res = runtime.run(&program, &());
         (res, runtime)
@@ -147,7 +148,7 @@ fn a_gt_s() {
         ret;
     }
     // negative literal works only on macro
-    aluvm_macro_succ! {
+    aluasm_macro_succ! {
         put     a8[1],-1;
         put     a8[2],1;
         lt.s    a8[1],a8[2];
@@ -235,6 +236,12 @@ fn bytes_put() {
         eq    s16[1],s16[2];
         ret;
     }
+    aluasm_succ! {
+        put   s16[1],"";
+        put   s16[2],"";
+        eq    s16[1],s16[2];
+        ret;
+    }
 }
 
 #[test]
@@ -318,6 +325,7 @@ fn bytes_fill() {
         ret;
     }
 }
+
 #[test]
 fn bytes_fill_extend() {
     aluasm_succ! {
@@ -338,6 +346,84 @@ fn bytes_fill_extend() {
         put    a8[0],98;
         fill.e s16[0],a16[0],a16[1],a8[0];
         eq     s16[0],s16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_len() {
+    aluasm_succ! {
+        put    s16[0],"aaaaaaaa";
+        put    a16[0],8;
+        len    a16[1],s16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_len_overflow() {
+    aluasm_succ! {
+        put    a16[0],0;
+        put    a16[1],255;
+        put    a8[0],97;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        len    a8[2],s16[0];
+        ret;
+    }
+    aluasm_fail! {
+        put    a16[0],0;
+        put    a16[1],256;
+        put    a8[0],97;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        len    a8[2],s16[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    a16[0],0;
+        put    a16[1],255;
+        put    a8[0],97;
+        put    a8[2],1;
+        fill.e s16[0],a16[0],a16[1],a8[0];
+        len    a8[2],s16[0];
+        eq.e   a8[2],a8[3];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_cnt() {
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    a8[0],108;
+        put    a16[0],3;
+        cnt    a16[1],s16[0],a8[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_cnt_uninitialized_byte() {
+    aluasm_fail! {
+        put    s16[0],"hello world";
+        cnt    a16[1],s16[0],a8[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    a16[1],1;
+        cnt    a16[1],s16[0],a8[0];
+        eq.e   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_cnt_empty_string() {
+    aluasm_fail! {
+        put    s16[0],"";
+        cnt    a16[1],s16[0],a8[0];
         ret;
     }
 }
