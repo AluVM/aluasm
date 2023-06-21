@@ -1072,8 +1072,8 @@ impl<'i> Statement<'i> {
             Operator::con => {
                 let _: RegS = reg! {0};
                 let _: RegS = reg! {1};
-                for n in 1..4 {
-                    let reg: RegA = reg! {n+1};
+                for n in 2..5 {
+                    let reg: RegA = reg! {n};
                     if reg != RegA::A16 {
                         issues.push_error(
                             SemanticError::OperandWrongReg {

@@ -427,3 +427,57 @@ fn bytes_cnt_empty_string() {
         ret;
     }
 }
+
+#[test]
+fn bytes_con() {
+    aluasm_succ! {
+        put    s16[0],"hello@world!!";
+        put    s16[1],"hello#world!";
+        put    a16[0],0;
+        put    a16[1],5;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.n   a16[0],a16[2];
+        eq.n   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello@world!!";
+        put    s16[1],"hello#world!";
+        put    a16[0],1;
+        put    a16[1],6;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.n   a16[0],a16[2];
+        eq.n   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"hello world";
+        put    a16[0],0;
+        put    a16[1],11;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.n   a16[0],a16[2];
+        eq.n   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"hello world";
+        put    a16[0],1;
+        put    a16[2],1000;
+        put    a16[3],1000;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.e   a16[0],a16[2];
+        eq.e   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    a16[0],1;
+        put    a16[2],1000;
+        put    a16[3],1000;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.e   a16[0],a16[2];
+        eq.e   a16[1],a16[3];
+        ret;
+    }
+}
