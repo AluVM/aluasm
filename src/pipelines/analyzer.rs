@@ -305,10 +305,11 @@ impl<'i> Analyze<'i> for Operand<'i> {
                 let index: u8 = index.parse().map_err(|err| {
                     LexerError::RegisterIndexNonDecimal(span.to_src(), err, index)
                 })?;
-                let index = u5::try_from(index).unwrap_or_else(|_| {
-                    issues.push_error(SyntaxError::RegisterIndexOutOfRange(index), &span);
-                    u5::with(0)
-                });
+                let index = u5::try_from(index)
+                    .unwrap_or_else(|_| {
+                        issues.push_error(SyntaxError::RegisterIndexOutOfRange(index), &span);
+                        u5::with(0)
+                    });
                 let set = match family.as_rule() {
                     Rule::reg_a => {
                         let a = RegA::with(member).unwrap_or_else(|| {
