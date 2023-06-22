@@ -68,8 +68,8 @@ macro_rules! aluasm_macro {
 #[test]
 fn a8_ne() {
     aluasm_fail! {
-        put     12,a8[1];
-        put     9,a8[2];
+        put     a8[1],12;
+        put     a8[2],9;
         eq.n    a8[1],a8[2];
         ret;
     }
@@ -78,8 +78,8 @@ fn a8_ne() {
 #[test]
 fn a8_eq() {
     aluasm_succ! {
-        put     9,a8[1];
-        put     9,a8[2];
+        put     a8[1],9;
+        put     a8[2],9;
         eq.n    a8[1],a8[2];
         ret;
     }
@@ -96,8 +96,8 @@ fn a8_eq() {
 #[test]
 fn a16_eq() {
     aluasm_succ! {
-        put     4,a16[1];
-        put     4,a16[2];
+        put     a16[1],4;
+        put     a16[2],4;
         eq.n    a16[1],a16[2];
         ret;
     }
@@ -106,8 +106,8 @@ fn a16_eq() {
 #[test]
 fn a_eq_fail() {
     aluasm_fail! {
-        put     3,a16[1];
-        put     4,a16[2];
+        put     a16[1],3;
+        put     a16[2],4;
         eq.n    a16[1],a16[2];
         ret;
     }
@@ -132,8 +132,8 @@ fn a_eq_noneeq_noneq() {
 #[test]
 fn a_gt_u() {
     aluasm_succ! {
-        put     2,a8[1];
-        put     1,a8[2];
+        put     a8[1],2;
+        put     a8[2],1;
         gt.u    a8[1],a8[2];
         ret;
     }
@@ -142,21 +142,21 @@ fn a_gt_u() {
 #[test]
 fn a_gt_s() {
     aluasm_succ! {
-        put     1,a8[1];
-        put     255,a8[2]; // -1
+        put     a8[1],1;
+        put     a8[2],255; // -1
         gt.s    a8[1],a8[2];
         ret;
     }
     // negative literal works only on macro
     aluasm_macro_succ! {
-        put     -1,a8[1];
-        put     1,a8[2];
+        put     a8[1],-1;
+        put     a8[2],1;
         lt.s    a8[1],a8[2];
         ret;
     };
     aluasm_fail! {
-        put     1,a8[1];
-        put     2,a8[2];
+        put     a8[1],1;
+        put     a8[2],2;
         gt.s    a8[1],a8[2];
         ret;
     }
@@ -165,8 +165,8 @@ fn a_gt_s() {
 #[test]
 fn a_lt_u() {
     aluasm_succ! {
-        put     1,a8[1];
-        put     2,a8[2];
+        put     a8[1],1;
+        put     a8[2],2;
         lt.u    a8[1],a8[2];
         ret;
     }
@@ -175,14 +175,14 @@ fn a_lt_u() {
 #[test]
 fn a_lt_s() {
     aluasm_succ! {
-        put     255,a8[1]; // -1
-        put     1,a8[2];
+        put     a8[1],255; // -1
+        put     a8[2],1;
         lt.s    a8[1],a8[2];
         ret;
     }
     aluasm_fail! {
-        put     2,a8[1];
-        put     1,a8[2];
+        put     a8[1],2;
+        put     a8[2],1;
         lt.s    a8[1],a8[2];
         ret;
     }
@@ -191,9 +191,9 @@ fn a_lt_s() {
 #[test]
 fn stp_add() {
     aluasm_succ! {
-        put     3,a8[1];
-        add     4,a8[1];
-        put     7,a8[2];
+        put     a8[1],3;
+        add     a8[1],4;
+        put     a8[2],7;
         eq.n    a8[1],a8[2];
         ret;
     }
@@ -202,9 +202,9 @@ fn stp_add() {
 #[test]
 fn stp_sub() {
     aluasm_fail! {
-        put     3,a8[1];
-        sub     4,a8[1];
-        put     127,a8[2]; // -1
+        put     a8[1],3;
+        sub     a8[1],4;
+        put     a8[2],127; // -1
         eq.n    a8[1],a8[2];
         ret;
     }
@@ -213,9 +213,9 @@ fn stp_sub() {
 #[test]
 fn float() {
     aluasm_succ! {
-            put   1.25,f32[8];
-            put   1.5,f32[9];
-            put   2.75,f32[10];
+            put   f32[8],1.25;
+            put   f32[9],1.5;
+            put   f32[10],2.75;
             add.f f32[8],f32[9];
             eq.e  f32[9],f32[10];
             ret;
@@ -237,8 +237,8 @@ fn bytes_put() {
         ret;
     }
     aluasm_succ! {
-        put   "",s16[1];
-        put   "",s16[2];
+        put   s16[1],"";
+        put   s16[2],"";
         eq    s16[1],s16[2];
         ret;
     }
@@ -247,18 +247,18 @@ fn bytes_put() {
 #[test]
 fn bytes_extr() {
     aluasm_succ! {
-            put    "################@@@@@@",s16[0];
-            put    0,a16[0];
+            put    s16[0],"################@@@@@@";
+            put    a16[0],0;
             extr   s16[0],r128[0],a16[0];
-            put    0x23232323232323232323232323232323,r128[1];
+            put    r128[1],0x23232323232323232323232323232323;
             eq.n   r128[0],r128[1];
             ret;
     };
     aluasm_succ! {
-            put    "################@@@@@@",s16[0];
-            put    3,a16[0];
+            put    s16[0],"################@@@@@@";
+            put    a16[0],3;
             extr   s16[0],r128[0],a16[0];
-            put    0x40404023232323232323232323232323,r128[1];
+            put    r128[1],0x40404023232323232323232323232323;
             eq.n   r128[0],r128[1];
             ret;
     }
@@ -267,46 +267,46 @@ fn bytes_extr() {
 #[test]
 fn bytes_extr_offset_exceed() {
     aluasm_succ! {
-            put    "123456788901234567",s16[0];
-            put    0,a16[0];
+            put    s16[0],"123456788901234567";
+            put    a16[0],0;
             extr   s16[0],r128[0],a16[0];
             ret;
     }
     aluasm_succ! {
-            put    "123456788901234567",s16[0];
-            put    1,a16[0];
+            put    s16[0],"123456788901234567";
+            put    a16[0],1;
             extr   s16[0],r128[0],a16[0];
             ret;
     }
     aluasm_fail! {
-            put    "123456788901234567",s16[0];
-            put    2,a16[0];
+            put    s16[0],"123456788901234567";
+            put    a16[0],2;
             extr   s16[0],r128[0],a16[0];
             ret;
     }
     aluasm_fail! {
-            put    "123456788901234567",s16[0];
-            put    2,a16[0];
+            put    s16[0],"123456788901234567";
+            put    a16[0],2;
             extr   s16[0],r128[0],a16[0];
             ret;
     }
     aluasm_succ! {
-            put    "################@",s16[0];
-            put    1,a16[0];
+            put    s16[0],"################@";
+            put    a16[0],1;
             extr   s16[0],r128[0],a16[0];
-            put    0x40232323232323232323232323232323,r128[1];
+            put    r128[1],0x40232323232323232323232323232323;
             eq.n   r128[0],r128[1];
             ret;
     }
     aluasm_fail! {
-            put    "123456788901234567",s16[0];
-            put    100,a16[0];
+            put    s16[0],"123456788901234567";
+            put    a16[0],100;
             extr   s16[0],r128[0],a16[0];
             ret;
     }
     aluasm_fail! {
-            put    "123",s16[0];
-            put    0,a16[0];
+            put    s16[0],"123";
+            put    a16[0],0;
             extr   s16[0],r128[0],a16[0];
             ret;
     }
@@ -355,7 +355,7 @@ fn bytes_len() {
     aluasm_succ! {
         put    s16[0],"aaaaaaaa";
         put    a16[0],8;
-        len    a16[1],s16[0];
+        len    s16[0],a16[1];
         eq.n   a16[0],a16[1];
         ret;
     }
@@ -368,7 +368,7 @@ fn bytes_len_overflow() {
         put    a16[1],255;
         put    a8[0],97;
         fill.e s16[0],a16[0],a16[1],a8[0];
-        len    a8[2],s16[0];
+        len    s16[0],a8[2];
         ret;
     }
     aluasm_fail! {
@@ -376,7 +376,7 @@ fn bytes_len_overflow() {
         put    a16[1],256;
         put    a8[0],97;
         fill.e s16[0],a16[0],a16[1],a8[0];
-        len    a8[2],s16[0];
+        len    s16[0],a8[2];
         ret;
     }
     aluasm_succ! {
@@ -385,7 +385,7 @@ fn bytes_len_overflow() {
         put    a8[0],97;
         put    a8[2],1;
         fill.e s16[0],a16[0],a16[1],a8[0];
-        len    a8[2],s16[0];
+        len    s16[0],a8[2];
         eq.e   a8[2],a8[3];
         ret;
     }
@@ -397,7 +397,7 @@ fn bytes_cnt() {
         put    s16[0],"hello world";
         put    a8[0],108;
         put    a16[0],3;
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         eq.n   a16[0],a16[1];
         ret;
     }
@@ -407,13 +407,13 @@ fn bytes_cnt() {
 fn bytes_cnt_uninitialized_byte() {
     aluasm_fail! {
         put    s16[0],"hello world";
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         ret;
     }
     aluasm_succ! {
         put    s16[0],"hello world";
         put    a16[1],1;
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         eq.e   a16[0],a16[1];
         ret;
     }
@@ -423,7 +423,7 @@ fn bytes_cnt_uninitialized_byte() {
 fn bytes_cnt_empty_string() {
     aluasm_fail! {
         put    s16[0],"";
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         ret;
     }
 }

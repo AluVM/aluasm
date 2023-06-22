@@ -677,11 +677,11 @@ impl<'i> Statement<'i> {
                 RegAFR::F(f) => Instr::Put(PutOp::ClrF(f, idx! {0})),
                 RegAFR::R(r) => Instr::Put(PutOp::ClrR(r, idx! {0})),
             },
-            Operator::put => match reg! {1} {
-                RegAll::A(a) => Instr::Put(PutOp::PutA(a, idx! {1}, num! {0, a})),
-                RegAll::F(f) => Instr::Put(PutOp::PutF(f, idx! {1}, num! {0, f})),
-                RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {1}, num! {0, r})),
-                RegAll::S => Instr::Bytes(BytesOp::Put(str! {0}, idx! {1}, false)),
+            Operator::put => match reg! {0} {
+                RegAll::A(a) => Instr::Put(PutOp::PutA(a, idx! {0}, num! {1, a})),
+                RegAll::F(f) => Instr::Put(PutOp::PutF(f, idx! {0}, num! {1, f})),
+                RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {0}, num! {1, r})),
+                RegAll::S => Instr::Bytes(BytesOp::Put(idx! {0}, str! {1}, false)),
             },
             Operator::putif => match reg! {1} {
                 RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, num! {0, a})),
@@ -826,14 +826,14 @@ impl<'i> Statement<'i> {
                 Instr::Arithmetic(ArithmeticOp::Stp(reg! {0}, idx! {0}, Step::with(-1)))
             }
             Operator::add => {
-                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
+                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(1) {
                     if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
-                        reg! {1},
-                        idx! {1},
+                        reg! {0},
+                        idx! {0},
                         Step::with(step.low_u32() as i8),
                     ))
                 } else {
@@ -855,14 +855,14 @@ impl<'i> Statement<'i> {
                 }
             }
             Operator::sub => {
-                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(0) {
+                if let Some(Operand::Lit(Literal::Int(mut step, _), span)) = self.operands.get(1) {
                     if step > u1024::from(i8::MAX as u8) {
                         step = u1024::from(1u64);
                         issues.push_error(SemanticError::StepTooLarge(self.operator.0), span);
                     }
                     Instr::Arithmetic(ArithmeticOp::Stp(
-                        reg! {1},
-                        idx! {1},
+                        reg! {0},
+                        idx! {0},
                         Step::with(-(step.low_u32() as i8)),
                     ))
                 } else {
@@ -1040,13 +1040,13 @@ impl<'i> Statement<'i> {
                 Instr::Bytes(BytesOp::Fill(idx! {0}, idx! {1}, idx! {2}, idx! {3}, flags!()))
             }
             Operator::len => {
-                let _: RegS = reg! {1};
-                Instr::Bytes(BytesOp::Len(idx! {1}, reg! {0}, idx! {0}))
+                let _: RegS = reg! {0};
+                Instr::Bytes(BytesOp::Len(idx! {0}, reg! {1}, idx! {1}))
             }
             Operator::cnt => {
-                let _: RegS = reg! {1};
-                let byte_reg: RegA = reg! {2};
-                let dst_reg: RegA = reg! {0};
+                let _: RegS = reg! {0};
+                let byte_reg: RegA = reg! {1};
+                let dst_reg: RegA = reg! {2};
                 if byte_reg != RegA::A8 {
                     issues.push_error(
                         SemanticError::OperandWrongReg {
@@ -1054,7 +1054,7 @@ impl<'i> Statement<'i> {
                             pos: 2,
                             expected: "a8 register",
                         },
-                        self.operands[1].as_span(),
+                        self.operands[2].as_span(),
                     );
                 }
                 if dst_reg != RegA::A16 {
@@ -1064,10 +1064,10 @@ impl<'i> Statement<'i> {
                             pos: 0,
                             expected: "a16 register",
                         },
-                        self.operands[2].as_span(),
+                        self.operands[0].as_span(),
                     );
                 }
-                Instr::Bytes(BytesOp::Cnt(idx! {1}, idx! {2}, idx! {0}))
+                Instr::Bytes(BytesOp::Cnt(idx! {0}, idx! {1}, idx! {2}))
             }
             Operator::con => {
                 let _: RegS = reg! {0};
