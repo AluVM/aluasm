@@ -221,6 +221,9 @@ macro_rules! instr {
         assert_eq!(0, $should_be_0);
         Instr::Bytes(BytesOp::Find(RegS::from($str_idx), RegS::from($fragment_idx)))
     }};
+    (rev s16[$src_idx:literal],s16[$dst_idx:literal]) => {{
+        Instr::Bytes(BytesOp::Rev(RegS::from($src_idx), RegS::from($dst_idx)))
+    }};
     (put $reg:ident[$idx:literal], $val:literal) => {{
         let s = stringify!($val);
         let mut num = s.parse::<MaybeNumber>().expect(&format!("invalid number literal `{}`", s));

@@ -531,3 +531,18 @@ fn bytes_find_max() {
         ret;
     }
 }
+
+#[test]
+fn bytes_rev() {
+    aluasm_succ! {
+        put    s16[0],"abcd";
+        put    s16[1],"dcba";
+        rev    s16[0],s16[2];
+        eq     s16[1],s16[2];
+        ret;
+    }
+    aluasm_fail! {
+        rev    s16[0],s16[1];
+        ret;
+    }
+}
