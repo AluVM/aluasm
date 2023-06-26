@@ -683,9 +683,9 @@ impl<'i> Statement<'i> {
                 RegAll::R(r) => Instr::Put(PutOp::PutR(r, idx! {0}, num! {1, r})),
                 RegAll::S => Instr::Bytes(BytesOp::Put(idx! {0}, str! {1}, false)),
             },
-            Operator::putif => match reg! {0} {
-                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {0}, num! {1, a})),
-                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {0}, num! {1, r})),
+            Operator::putif => match reg! {1} {
+                RegAR::A(a) => Instr::Put(PutOp::PutIfA(a, idx! {1}, num! {0, a})),
+                RegAR::R(r) => Instr::Put(PutOp::PutIfR(r, idx! {1}, num! {0, r})),
             },
 
             // *** Move operations
@@ -698,9 +698,9 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAFR::A(a) => Instr::Move(MoveOp::DupA(a, idx! {1}, idx! {0})),
-                    RegAFR::F(f) => Instr::Move(MoveOp::DupF(f, idx! {1}, idx! {0})),
-                    RegAFR::R(r) => Instr::Move(MoveOp::DupR(r, idx! {1}, idx! {0})),
+                    RegAFR::A(a) => Instr::Move(MoveOp::DupA(a, idx! {0}, idx! {1})),
+                    RegAFR::F(f) => Instr::Move(MoveOp::DupF(f, idx! {0}, idx! {1})),
+                    RegAFR::R(r) => Instr::Move(MoveOp::DupR(r, idx! {0}, idx! {1})),
                 }
             }
             Operator::mov => {
@@ -712,27 +712,27 @@ impl<'i> Statement<'i> {
                     );
                 }
                 match reg {
-                    RegAll::A(a) => Instr::Move(MoveOp::MovA(a, idx! {1}, idx! {0})),
-                    RegAll::F(f) => Instr::Move(MoveOp::MovF(f, idx! {1}, idx! {0})),
-                    RegAll::R(r) => Instr::Move(MoveOp::MovR(r, idx! {1}, idx! {0})),
-                    RegAll::S => Instr::Bytes(BytesOp::Mov(idx! {1}, idx! {0})),
+                    RegAll::A(a) => Instr::Move(MoveOp::MovA(a, idx! {0}, idx! {1})),
+                    RegAll::F(f) => Instr::Move(MoveOp::MovF(f, idx! {0}, idx! {1})),
+                    RegAll::R(r) => Instr::Move(MoveOp::MovR(r, idx! {0}, idx! {1})),
+                    RegAll::S => Instr::Bytes(BytesOp::Mov(idx! {0}, idx! {1})),
                 }
             }
-            Operator::cnv => match (reg! {1}, reg! {0}) {
+            Operator::cnv => match (reg! {0}, reg! {1}) {
                 (RegAF::A(a1), RegAF::A(a2)) => {
-                    Instr::Move(MoveOp::CnvA(a1, idx! {1}, a2, idx! {0}))
+                    Instr::Move(MoveOp::CnvA(a1, idx! {0}, a2, idx! {1}))
                 }
                 (RegAF::F(f1), RegAF::F(f2)) => {
-                    Instr::Move(MoveOp::CnvF(f1, idx! {1}, f2, idx! {0}))
+                    Instr::Move(MoveOp::CnvF(f1, idx! {0}, f2, idx! {1}))
                 }
-                (RegAF::A(a), RegAF::F(f)) => Instr::Move(MoveOp::CnvAF(a, idx! {1}, f, idx! {0})),
-                (RegAF::F(f), RegAF::A(a)) => Instr::Move(MoveOp::CnvFA(f, idx! {1}, a, idx! {0})),
+                (RegAF::A(a), RegAF::F(f)) => Instr::Move(MoveOp::CnvAF(a, idx! {0}, f, idx! {1})),
+                (RegAF::F(f), RegAF::A(a)) => Instr::Move(MoveOp::CnvFA(f, idx! {0}, a, idx! {1})),
             },
-            Operator::cpy => match reg! {1} {
-                RegAR::A(a) => Instr::Move(MoveOp::CpyA(a, idx! {1}, reg! {0}, idx! {0})),
-                RegAR::R(r) => Instr::Move(MoveOp::CpyR(r, idx! {1}, reg! {0}, idx! {0})),
+            Operator::cpy => match reg! {0} {
+                RegAR::A(a) => Instr::Move(MoveOp::CpyA(a, idx! {0}, reg! {1}, idx! {1})),
+                RegAR::R(r) => Instr::Move(MoveOp::CpyR(r, idx! {0}, reg! {1}, idx! {1})),
             },
-            Operator::spy => Instr::Move(MoveOp::SpyAR(reg! {1}, idx! {1}, reg! {0}, idx! {0})),
+            Operator::spy => Instr::Move(MoveOp::SpyAR(reg! {0}, idx! {0}, reg! {1}, idx! {1})),
             Operator::swp => {
                 let reg = reg! {0};
                 if reg != reg! {1} {
@@ -846,10 +846,10 @@ impl<'i> Statement<'i> {
                     }
                     match reg {
                         RegAF::A(a) => {
-                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {1}, idx! {0}))
+                            Instr::Arithmetic(ArithmeticOp::AddA(flags!(), a, idx! {0}, idx! {1}))
                         }
                         RegAF::F(f) => {
-                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {1}, idx! {0}))
+                            Instr::Arithmetic(ArithmeticOp::AddF(flags!(), f, idx! {0}, idx! {1}))
                         }
                     }
                 }
@@ -1040,13 +1040,13 @@ impl<'i> Statement<'i> {
                 Instr::Bytes(BytesOp::Fill(idx! {0}, idx! {1}, idx! {2}, idx! {3}, flags!()))
             }
             Operator::len => {
-                let _: RegS = reg! {1};
-                Instr::Bytes(BytesOp::Len(idx! {1}, reg! {0}, idx! {0}))
+                let _: RegS = reg! {0};
+                Instr::Bytes(BytesOp::Len(idx! {0}, reg! {1}, idx! {1}))
             }
             Operator::cnt => {
-                let _: RegS = reg! {1};
-                let byte_reg: RegA = reg! {2};
-                let dst_reg: RegA = reg! {0};
+                let _: RegS = reg! {0};
+                let byte_reg: RegA = reg! {1};
+                let dst_reg: RegA = reg! {2};
                 if byte_reg != RegA::A8 {
                     issues.push_error(
                         SemanticError::OperandWrongReg {
@@ -1054,7 +1054,7 @@ impl<'i> Statement<'i> {
                             pos: 2,
                             expected: "a8 register",
                         },
-                        self.operands[1].as_span(),
+                        self.operands[2].as_span(),
                     );
                 }
                 if dst_reg != RegA::A16 {
@@ -1064,16 +1064,16 @@ impl<'i> Statement<'i> {
                             pos: 0,
                             expected: "a16 register",
                         },
-                        self.operands[2].as_span(),
+                        self.operands[0].as_span(),
                     );
                 }
-                Instr::Bytes(BytesOp::Cnt(idx! {1}, idx! {2}, idx! {0}))
+                Instr::Bytes(BytesOp::Cnt(idx! {0}, idx! {1}, idx! {2}))
             }
             Operator::con => {
                 let _: RegS = reg! {0};
                 let _: RegS = reg! {1};
-                for n in 1..4 {
-                    let reg: RegA = reg! {n+1};
+                for n in 2..5 {
+                    let reg: RegA = reg! {n};
                     if reg != RegA::A16 {
                         issues.push_error(
                             SemanticError::OperandWrongReg {
@@ -1090,23 +1090,23 @@ impl<'i> Statement<'i> {
             Operator::find => {
                 let _: RegS = reg! {0};
                 let _: RegS = reg! {1};
-                let reg: RegA = reg! {3};
-                let idx: Reg32 = idx! {3};
-                if reg != RegA::A16 || idx != Reg32::Reg1 {
+                let reg: RegA = reg! {2};
+                let idx: Reg32 = idx! {2};
+                if reg != RegA::A16 || idx != Reg32::Reg0 {
                     issues.push_error(
                         SemanticError::OperandWrongReg {
                             operator: self.operator.0,
-                            pos: 3,
+                            pos: 2,
                             expected: "a16[0] register",
                         },
-                        self.operands[3].as_span(),
+                        self.operands[2].as_span(),
                     );
                 }
                 Instr::Bytes(BytesOp::Find(idx! {0}, idx! {1}))
             }
             Operator::extr => {
-                let _: RegS = reg! {1};
-                Instr::Bytes(BytesOp::Extr(idx! {1}, reg! {0}, idx! {0}, idx! {2}))
+                let _: RegS = reg! {0};
+                Instr::Bytes(BytesOp::Extr(idx! {0}, reg! {1}, idx! {1}, idx! {2}))
             }
             Operator::inj => {
                 let _: RegS = reg! {0};

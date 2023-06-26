@@ -213,22 +213,22 @@ fn stp_sub() {
 #[test]
 fn float() {
     aluasm_succ! {
-        put   f32[8],1.25;
-        put   f32[9],1.5;
-        put   f32[10],2.75;
-        add.f f32[9],f32[8];
-        eq.e  f32[9],f32[10];
-        ret;
+            put   f32[8],1.25;
+            put   f32[9],1.5;
+            put   f32[10],2.75;
+            add.f f32[8],f32[9];
+            eq.e  f32[9],f32[10];
+            ret;
     }
 }
 
 #[test]
 fn bytes_put() {
     aluasm_succ! {
-        put   s16[1],"aaa";
-        put   s16[2],"aaa";
-        eq    s16[1],s16[2];
-        ret;
+            put   s16[1],"aaa";
+            put   s16[2],"aaa";
+            eq    s16[1],s16[2];
+            ret;
     }
     aluasm_fail! {
         put   s16[1],"aaa";
@@ -247,68 +247,68 @@ fn bytes_put() {
 #[test]
 fn bytes_extr() {
     aluasm_succ! {
-        put    s16[0],"################@@@@@@";
-        put    a16[0],0;
-        extr   r128[0],s16[0],a16[0];
-        put    r128[1],0x23232323232323232323232323232323;
-        eq.n   r128[0],r128[1];
-        ret;
+            put    s16[0],"################@@@@@@";
+            put    a16[0],0;
+            extr   s16[0],r128[0],a16[0];
+            put    r128[1],0x23232323232323232323232323232323;
+            eq.n   r128[0],r128[1];
+            ret;
     };
     aluasm_succ! {
-        put    s16[0],"################@@@@@@";
-        put    a16[0],3;
-        extr   r128[0],s16[0],a16[0];
-        put    r128[1],0x40404023232323232323232323232323;
-        eq.n   r128[0],r128[1];
-        ret;
+            put    s16[0],"################@@@@@@";
+            put    a16[0],3;
+            extr   s16[0],r128[0],a16[0];
+            put    r128[1],0x40404023232323232323232323232323;
+            eq.n   r128[0],r128[1];
+            ret;
     }
 }
 
 #[test]
 fn bytes_extr_offset_exceed() {
     aluasm_succ! {
-        put    s16[0],"123456788901234567";
-        put    a16[0],0;
-        extr   r128[0],s16[0],a16[0];
-        ret;
+            put    s16[0],"123456788901234567";
+            put    a16[0],0;
+            extr   s16[0],r128[0],a16[0];
+            ret;
     }
     aluasm_succ! {
-        put    s16[0],"123456788901234567";
-        put    a16[0],1;
-        extr   r128[0],s16[0],a16[0];
-        ret;
+            put    s16[0],"123456788901234567";
+            put    a16[0],1;
+            extr   s16[0],r128[0],a16[0];
+            ret;
     }
     aluasm_fail! {
-        put    s16[0],"123456788901234567";
-        put    a16[0],2;
-        extr   r128[0],s16[0],a16[0];
-        ret;
+            put    s16[0],"123456788901234567";
+            put    a16[0],2;
+            extr   s16[0],r128[0],a16[0];
+            ret;
     }
     aluasm_fail! {
-        put    s16[0],"123456788901234567";
-        put    a16[0],2;
-        extr   r128[0],s16[0],a16[0];
-        ret;
+            put    s16[0],"123456788901234567";
+            put    a16[0],2;
+            extr   s16[0],r128[0],a16[0];
+            ret;
     }
     aluasm_succ! {
-        put    s16[0],"################@";
-        put    a16[0],1;
-        extr   r128[0],s16[0],a16[0];
-        put    r128[1],0x40232323232323232323232323232323;
-        eq.n   r128[0],r128[1];
-        ret;
+            put    s16[0],"################@";
+            put    a16[0],1;
+            extr   s16[0],r128[0],a16[0];
+            put    r128[1],0x40232323232323232323232323232323;
+            eq.n   r128[0],r128[1];
+            ret;
     }
     aluasm_fail! {
-        put    s16[0],"123456788901234567";
-        put    a16[0],100;
-        extr   r128[0],s16[0],a16[0];
-        ret;
+            put    s16[0],"123456788901234567";
+            put    a16[0],100;
+            extr   s16[0],r128[0],a16[0];
+            ret;
     }
     aluasm_fail! {
-        put    s16[0],"123";
-        put    a16[0],0;
-        extr   r128[0],s16[0],a16[0];
-        ret;
+            put    s16[0],"123";
+            put    a16[0],0;
+            extr   s16[0],r128[0],a16[0];
+            ret;
     }
 }
 
@@ -355,7 +355,7 @@ fn bytes_len() {
     aluasm_succ! {
         put    s16[0],"aaaaaaaa";
         put    a16[0],8;
-        len    a16[1],s16[0];
+        len    s16[0],a16[1];
         eq.n   a16[0],a16[1];
         ret;
     }
@@ -368,7 +368,7 @@ fn bytes_len_overflow() {
         put    a16[1],255;
         put    a8[0],97;
         fill.e s16[0],a16[0],a16[1],a8[0];
-        len    a8[2],s16[0];
+        len    s16[0],a8[2];
         ret;
     }
     aluasm_fail! {
@@ -376,7 +376,7 @@ fn bytes_len_overflow() {
         put    a16[1],256;
         put    a8[0],97;
         fill.e s16[0],a16[0],a16[1],a8[0];
-        len    a8[2],s16[0];
+        len    s16[0],a8[2];
         ret;
     }
     aluasm_succ! {
@@ -385,7 +385,7 @@ fn bytes_len_overflow() {
         put    a8[0],97;
         put    a8[2],1;
         fill.e s16[0],a16[0],a16[1],a8[0];
-        len    a8[2],s16[0];
+        len    s16[0],a8[2];
         eq.e   a8[2],a8[3];
         ret;
     }
@@ -397,7 +397,7 @@ fn bytes_cnt() {
         put    s16[0],"hello world";
         put    a8[0],108;
         put    a16[0],3;
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         eq.n   a16[0],a16[1];
         ret;
     }
@@ -407,13 +407,13 @@ fn bytes_cnt() {
 fn bytes_cnt_uninitialized_byte() {
     aluasm_fail! {
         put    s16[0],"hello world";
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         ret;
     }
     aluasm_succ! {
         put    s16[0],"hello world";
         put    a16[1],1;
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
         eq.e   a16[0],a16[1];
         ret;
     }
@@ -423,7 +423,126 @@ fn bytes_cnt_uninitialized_byte() {
 fn bytes_cnt_empty_string() {
     aluasm_fail! {
         put    s16[0],"";
-        cnt    a16[1],s16[0],a8[0];
+        cnt    s16[0],a8[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_con() {
+    aluasm_succ! {
+        put    s16[0],"hello@world!!";
+        put    s16[1],"hello#world!";
+        put    a16[0],0;
+        put    a16[1],5;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.n   a16[0],a16[2];
+        eq.n   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello@world!!";
+        put    s16[1],"hello#world!";
+        put    a16[0],1;
+        put    a16[1],6;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.n   a16[0],a16[2];
+        eq.n   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"hello world";
+        put    a16[0],0;
+        put    a16[1],11;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.n   a16[0],a16[2];
+        eq.n   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"hello world";
+        put    a16[0],1;
+        put    a16[2],1000;
+        put    a16[3],1000;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.e   a16[0],a16[2];
+        eq.e   a16[1],a16[3];
+        ret;
+    }
+    aluasm_succ! {
+        put    a16[0],1;
+        put    a16[2],1000;
+        put    a16[3],1000;
+        con    s16[0],s16[1],a16[0],a16[2],a16[3];
+        eq.e   a16[0],a16[2];
+        eq.e   a16[1],a16[3];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_find() {
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"l";
+        put    a16[1],3;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"ll";
+        put    a16[1],1;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"lll";
+        put    a16[1],0;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+    aluasm_succ! {
+        put    s16[0],"hello world";
+        put    s16[1],"hello world!!!";
+        put    a16[1],0;
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_find_max() {
+    aluasm_succ! {
+        put    a16[1],0;
+        put    a16[2],65535;
+        put    a8[0],97;
+        fill.e s16[0],a16[1],a16[2],a8[0];
+        put    s16[1],"a";
+        find   s16[0],s16[1],a16[0];
+        eq.n   a16[0],a16[2];
+        ret;
+    }
+}
+
+#[test]
+fn bytes_rev() {
+    aluasm_succ! {
+        put    s16[0],"abcd";
+        put    s16[1],"dcba";
+        rev    s16[0],s16[2];
+        eq     s16[1],s16[2];
+        ret;
+    }
+    aluasm_fail! {
+        rev    s16[0],s16[1];
         ret;
     }
 }
