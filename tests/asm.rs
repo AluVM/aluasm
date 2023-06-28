@@ -632,3 +632,72 @@ fn bytes_rev() {
         ret;
     }
 }
+
+#[test]
+fn shl() {
+    aluasm_succ! {
+        put    a8[0],1;
+        put    a8[1],3;
+        put    a8[2],8;
+        shl    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+}
+
+#[test]
+fn shl_overflow() {
+    aluasm_succ! {
+        put    a8[0],0b11111111;
+        put    a8[1],7;
+        put    a8[2],0b10000000;
+        shl    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],0b11111111;
+        put    a8[1],8;
+        put    a8[2],0b00000000;
+        shl    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],0b11111111;
+        put    a8[1],9;
+        put    a8[2],0b00000000;
+        shl    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+}
+
+#[test]
+fn shl_rreg() {
+    aluasm_succ! {
+        put    r128[0],1;
+        put    a8[1],3;
+        put    r128[2],8;
+        shl    a8[1],r128[0];
+        eq.n   r128[0],r128[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],1;
+        put    a16[1],2;
+        put    r8192[2],4;
+        shl    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+    // FIXME shift value is limited to 1024
+    aluasm_succ! {
+        put    r8192[0],1;
+        put    a16[1],2000;
+        put    r8192[2],0;
+        shl    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+}
