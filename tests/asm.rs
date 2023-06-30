@@ -197,15 +197,101 @@ fn stp_add() {
         eq.n    a8[1],a8[2];
         ret;
     }
+    aluasm_succ! {
+        put     a16[1],65534;
+        add     a16[1],1;
+        put     a16[2],65535;
+        eq.n    a16[1],a16[2];
+        ret;
+    }
+}
+
+#[test]
+fn stp_add_overflow() {
+    aluasm_fail! {
+        put     a16[1],65534;
+        add     a8[1],2;
+        ret;
+    }
 }
 
 #[test]
 fn stp_sub() {
+    aluasm_succ! {
+        put     a32[1],7;
+        sub     a32[1],1;
+        put     a32[2],6;
+        eq.n    a32[1],a32[2];
+        ret;
+    }
+    aluasm_succ! {
+        put a32[8],3;
+        sub a32[8],3;
+        put a32[9],0;
+        eq.n a32[8],a32[9];
+        ret;
+    }
+}
+
+#[test]
+fn stp_sub_underflow() {
     aluasm_fail! {
         put     a8[1],3;
         sub     a8[1],4;
-        put     a8[2],127; // -1
-        eq.n    a8[1],a8[2];
+        ret;
+    }
+}
+
+#[test]
+fn inc() {
+    aluasm_succ! {
+        put     a32[1],7;
+        inc     a32[1];
+        put     a32[2],8;
+        eq.n    a32[1],a32[2];
+        ret;
+    }
+    aluasm_succ! {
+        put     a16[1],65534;
+        inc     a16[1];
+        put     a16[2],65535;
+        eq.n    a16[1],a16[2];
+        ret;
+    }
+}
+
+#[test]
+fn inc_overflow() {
+    aluasm_fail! {
+        put     a16[1],65535;
+        inc     a16[1];
+        ret;
+    }
+}
+
+#[test]
+fn dec() {
+    aluasm_succ! {
+        put     a1024[1],8;
+        dec     a1024[1];
+        put     a1024[2],7;
+        eq.n    a1024[1],a1024[2];
+        ret;
+    }
+    aluasm_succ! {
+        put     a256[1],1;
+        dec     a256[1];
+        put     a256[2],0;
+        eq.n    a256[1],a256[2];
+        ret;
+    }
+}
+
+#[test]
+fn dec_underflow() {
+    aluasm_fail! {
+        put     a16[1],0;
+        dec     a16[1];
         ret;
     }
 }
