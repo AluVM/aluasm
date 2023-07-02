@@ -691,12 +691,14 @@ fn shl_rreg() {
         eq.n   r8192[0],r8192[2];
         ret;
     }
-    // FIXME shift value is limited to 1024
     aluasm_succ! {
         put    r8192[0],1;
         put    a16[1],2000;
-        put    r8192[2],0;
+        put    r8192[2],1;
+        put    a16[2],1000;
         shl    a16[1],r8192[0];
+        shl    a16[2],r8192[2];
+        shl    a16[2],r8192[2];
         eq.n   r8192[0],r8192[2];
         ret;
     }
