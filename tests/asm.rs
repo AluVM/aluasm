@@ -703,3 +703,72 @@ fn shl_rreg() {
         ret;
     }
 }
+
+#[test]
+fn shr_u() {
+    aluasm_succ! {
+        put    a8[0],8;
+        put    a8[1],3;
+        put    a8[2],1;
+        shr.u  a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],8;
+        put    a8[1],4;
+        put    a8[2],0;
+        shr.u  a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],255;
+        put    a8[1],1;
+        put    a8[2],127;
+        shr.u  a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    // sets st0 to false if lsb is 0 before the operation
+    aluasm_fail! {
+        put    a8[0],2;
+        put    a8[1],1;
+        shr.u  a8[1],a8[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],2;
+        put    a8[1],1;
+        put    a8[2],1;
+        shr.u  a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],3;
+        put    a8[1],1;
+        shr.u  a8[1],a8[0];
+        ret;
+    }
+}
+
+#[test]
+fn shr_s() {
+    aluasm_succ! {
+        put    a8[0],8;
+        put    a8[1],3;
+        put    a8[2],1;
+        shr.s  a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],255;
+        put    a8[1],1;
+        put    a8[2],255;
+        shr.s  a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+}
