@@ -772,3 +772,40 @@ fn shr_s() {
         ret;
     }
 }
+
+#[test]
+fn shr_r() {
+    aluasm_succ! {
+        put    r128[0],8;
+        put    a8[1],3;
+        put    r128[2],1;
+        shr    a8[1],r128[0];
+        eq.n   r128[0],r128[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],4;
+        put    a16[1],2;
+        put    r8192[2],1;
+        shr    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],0;
+        put    a16[1],2;
+        put    r8192[2],0;
+        shr    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],1;
+        put    a16[1],2000;
+        put    r8192[2],1;
+        shl    a16[1],r8192[0];
+        shr    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+}
