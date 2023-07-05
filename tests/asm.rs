@@ -646,6 +646,22 @@ fn shl() {
 }
 
 #[test]
+fn shl_st0() {
+    aluasm_fail! {
+        put    a8[0],1;
+        put    a8[1],3;
+        shl    a8[1],a8[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],128;
+        put    a8[1],3;
+        shl    a8[1],a8[0];
+        ret;
+    }
+}
+
+#[test]
 fn shl_overflow() {
     aluasm_succ! {
         put    a8[0],0b11111111;
@@ -705,6 +721,24 @@ fn shl_rreg() {
 }
 
 #[test]
+fn shl_rreg_st0() {
+    aluasm_fail! {
+        put    r128[0],1;
+        put    a8[1],3;
+        shl    a8[1],r128[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    r128[0],1;
+        put    a16[1],127;
+        shl    a16[1],r128[0];
+        put    a16[1],1;
+        shl    a16[1],r128[0];
+        ret;
+    }
+}
+
+#[test]
 fn shr_u() {
     aluasm_succ! {
         put    a8[0],8;
@@ -743,6 +777,22 @@ fn shr_u() {
         put    a8[2],1;
         shr.u  a8[1],a8[0];
         eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],3;
+        put    a8[1],1;
+        shr.u  a8[1],a8[0];
+        ret;
+    }
+}
+
+#[test]
+fn shr_u_st0() {
+    aluasm_fail! {
+        put    a8[0],2;
+        put    a8[1],1;
+        shr.u  a8[1],a8[0];
         ret;
     }
     aluasm_succ! {
@@ -811,6 +861,22 @@ fn shr_r() {
 }
 
 #[test]
+fn shr_r_st0() {
+    aluasm_fail! {
+        put    r128[0],2;
+        put    a8[1],3;
+        shr    a8[1],r128[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    r128[0],3;
+        put    a8[1],3;
+        shr    a8[1],r128[0];
+        ret;
+    }
+}
+
+#[test]
 fn scl_a() {
     aluasm_succ! {
         put    a16[0],5;
@@ -836,6 +902,18 @@ fn scl_a() {
         eq.n   a8[0],a8[2];
         ret;
     }
+    aluasm_succ! {
+        put    a8[0],2;
+        put    a8[1],81;
+        put    a8[2],4;
+        scl    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+}
+
+#[test]
+fn scl_a_st0() {
     aluasm_fail! {
         put    a8[0],1;
         put    a8[1],1;
@@ -876,9 +954,21 @@ fn scl_r() {
         eq.n   r8192[0],r8192[2];
         ret;
     }
+    aluasm_succ! {
+        put    r1024[0],2;
+        put    a16[1],2049;
+        put    r1024[2],4;
+        scl    a16[1],r1024[0];
+        eq.n   r1024[0],r1024[2];
+        ret;
+    }
+}
+
+#[test]
+fn scl_r_st0() {
     aluasm_fail! {
-        put    r8192[0],1;
-        put    a16[1],8191;
+        put    r8192[0],5;
+        put    a16[1],1;
         scl    a16[1],r8192[0];
         ret;
     }
@@ -888,6 +978,110 @@ fn scl_r() {
         scl    a16[1],r8192[0];
         put    a16[1],1;
         scl    a16[1],r8192[0];
+        ret;
+    }
+}
+
+#[test]
+fn scr_a() {
+    aluasm_succ! {
+        put    a16[0],10;
+        put    a16[1],1;
+        put    a16[2],5;
+        scr    a16[1],a16[0];
+        eq.n   a16[0],a16[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],130;
+        put    a8[1],7;
+        put    a8[2],5;
+        scr    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],1;
+        put    a8[1],7;
+        put    a8[2],2;
+        scr    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],4;
+        put    a8[1],81;
+        put    a8[2],2;
+        scr    a8[1],a8[0];
+        eq.n   a8[0],a8[2];
+        ret;
+    }
+}
+
+#[test]
+fn scr_a_st0() {
+    aluasm_fail! {
+        put    a8[0],128;
+        put    a8[1],1;
+        scr    a8[1],a8[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    a8[0],1;
+        put    a8[1],1;
+        scr    a8[1],a8[0];
+        ret;
+    }
+}
+
+#[test]
+fn scr_r() {
+    aluasm_succ! {
+        put    r8192[0],10;
+        put    a16[1],1;
+        put    r8192[2],5;
+        scr    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],5;
+        put    a16[1],8192;
+        put    r8192[2],5;
+        scr    a8[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],1;
+        put    a16[1],8191;
+        put    r8192[2],2;
+        scr    a16[1],r8192[0];
+        eq.n   r8192[0],r8192[2];
+        ret;
+    }
+    aluasm_succ! {
+        put    r1024[0],4;
+        put    a16[1],2049;
+        put    r1024[2],2;
+        scr    a16[1],r1024[0];
+        eq.n   r1024[0],r1024[2];
+        ret;
+    }
+}
+
+#[test]
+fn scr_r_st0() {
+    aluasm_fail! {
+        put    r8192[0],4;
+        put    a16[1],1;
+        scr    a16[1],r8192[0];
+        ret;
+    }
+    aluasm_succ! {
+        put    r8192[0],1;
+        put    a16[1],1;
+        scr    a16[1],r8192[0];
         ret;
     }
 }
