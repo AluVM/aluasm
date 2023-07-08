@@ -26,7 +26,8 @@
 /// # Example
 ///
 /// ```
-/// # use aluvm::{aluasm, Prog, Vm};
+/// # use aluasm::aluasm;
+/// # use aluvm::{Prog, Vm};
 /// # use aluvm::library::Lib;
 /// # use aluvm::isa::Instr;
 ///
