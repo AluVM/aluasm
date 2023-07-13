@@ -777,14 +777,14 @@ macro_rules! instr {
             $crate::_reg_idx!($idx2),
         ))
     };
-    (shr $reg1:ident[$idx1:literal], $reg2:ident[$idx2:literal]) => {
+    (shr $reg1:ident[$idx1:literal], $reg2:ident[$idx2:literal]) => {{
         Instr::Bitwise(BitwiseOp::ShrR(
             $crate::_reg_tya2!(Reg, $reg1),
             $crate::_reg_idx!($idx1),
             $crate::_reg_ty!(Reg, $reg2),
             $crate::_reg_idx!($idx2),
         ))
-    };
+    }};
     (scl $reg1:ident[$idx1:literal], $reg2:ident[$idx2:literal]) => {
         Instr::Bitwise(BitwiseOp::Scl(
             $crate::_reg_tya2!(Reg, $reg1),
