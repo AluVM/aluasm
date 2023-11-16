@@ -56,7 +56,7 @@
 #[macro_export]
 macro_rules! aluasm {
     ($( $tt:tt )+) => { { #[allow(unused_imports)] {
-        use std::boxed::Box;
+        use ::std::boxed::Box;
 
         use ::aluvm::isa::{
             ArithmeticOp, BitwiseOp, BytesOp, CmpOp, ControlFlowOp, DigestOp, ExtendFlag, FloatEqFlag, Instr, IntFlags,
