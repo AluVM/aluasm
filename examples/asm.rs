@@ -9,7 +9,7 @@
 // You should have received a copy of the MIT License along with this software.
 // If not, see <https://opensource.org/licenses/MIT>.
 
-use aluasm::aluasm;
+use aluvm::aluasm;
 use aluvm::isa::Instr;
 use aluvm::library::Lib;
 use aluvm::{Prog, Vm};

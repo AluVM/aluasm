@@ -58,7 +58,7 @@ macro_rules! aluasm_compiler {
 macro_rules! aluasm_macro {
     ($( $tt:tt )+) => { {
         let mut runtime = aluvm::Vm::<aluvm::isa::Instr>::new();
-        let code = aluasm::aluasm! { $( $tt )+ };
+        let code = aluvm::aluasm! { $( $tt )+ };
         let program = aluvm::Prog::<aluvm::isa::Instr>::new(aluvm::library::Lib::assemble(&code).unwrap());
         let res = runtime.run(&program, &());
         (res, runtime)
