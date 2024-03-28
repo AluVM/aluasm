@@ -28,4 +28,4 @@ pest_derive = "2.1"
 clap = { version = "3.1.6", features = ["derive"] }
 
 [patch.crates-io]
-aluvm = { git = "https://github.com/aluvm/rust-aluvm", branch = "v0.11" }
+aluvm = { git = "https://github.com/aluvm/rust-aluvm", branch = "master" }

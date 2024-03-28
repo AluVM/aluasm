@@ -1182,6 +1182,21 @@ impl<'i> Statement<'i> {
                 }
                 Instr::Digest(DigestOp::Ripemd(idx! {0}, idx! {1}))
             }
+            Operator::blake3 => {
+                let reg: RegR = reg! {1};
+                if reg != RegR::R256 {
+                    issues.push_error(
+                        SemanticError::OperandWrongReg {
+                            operator: self.operator.0,
+                            pos: 2,
+                            expected: "r256 register",
+                        },
+                        self.operands[1].as_span(),
+                    );
+                    return Ok(Instr::Nop);
+                }
+                Instr::Digest(DigestOp::Blake3(idx! {0}, idx! {1}))
+            }
             Operator::sha2 => match reg! {1} {
                 RegR::R256 => Instr::Digest(DigestOp::Sha256(idx! {0}, idx! {1})),
                 RegR::R512 => Instr::Digest(DigestOp::Sha512(idx! {0}, idx! {1})),
